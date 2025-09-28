@@ -4,12 +4,60 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
-    <h1>
-        otra Prueba
-        Prueba de main
-    </h1>
+    <header>
+        <img src="/img/0-removebg-preview.png" alt="Logo">
+        <h1> Monitoring System 🍓 </h1>
+        <button onclick="window.location.href='/otraVista'"> Datos </button>
+    </header>
+
+    <main>
+        <!-- Measurement container -->
+         <div class="measures">
+            <!-- Temperature container -->
+            <div class="card">
+                <i class="fa-solid fa-temperature-high"></i>
+                <p> Temperatura: <%= measure[0]?.temperature %> °C </p>
+            </div>
+
+            <!-- Ambient humidity container -->
+            <div class="card">
+                <i class="fa-solid fa-droplet"></i>
+                <p> Humedad ambiental: <%= measure[0]?.ambient_humidity %> % </p>
+            </div>
+
+            <!-- Substrate moisture container -->
+            <div class="card">
+                <i class="fa-solid fa-seedling"></i>
+                <p> Humedad del sustrato: <%= measure[0]?.substrate_moisture %> % </p>
+            </div>
+
+            <!-- Light container -->
+            <div class="card">
+                <i class="fa-solid fa-sun"></i>
+                <p>Luz: <%= measure[0]?.percentage_light %>%</p>
+            </div>
+
+         </div>
+
+        <!-- Image Container -->
+        <div class="photo">
+            <div class="photo-container">
+                <% if (photos.length > 0  && photos[0].image) { %>
+                    <img src="data:<%= photos[0].mime %>;base64,<%= photos[0].image %>" alt="Monitoring photo">
+                <% } else { %>
+                    <p> No hay foto disponible </p>
+                <% } %>
+            </div>
+        </div>
+
+    </main>
+
+   <script src="/js/main.js"></script>
+
 </body>
 </html>
