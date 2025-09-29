@@ -81,12 +81,12 @@ main {
 
 .card {
     background: white;
-    border-radius: 20px;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-    padding: 1.5rem;
+    border-radius: 15px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
     margin: 1rem 0;
-    width: 100%;
-    max-width: 350%;
+    width: 90%;
+    max-width: 250%;
     text-align: center;
     transition: transform 0.2s;
 }
@@ -95,9 +95,20 @@ main {
     transform: translateY(-5px);
 }
 
+.card.time-card {
+    background: #f0f8ff;
+    border-left: 6px solid #30d979;
+}
+
+.card.time-card i {
+    font-size: 1.5rem;
+    margin-bottom: 0.3rem;
+    color: #30d979;
+}
+
 .card i {
-    font-size: 2rem;
-    margin-bottom: 0.5rem;
+    font-size: 1.5rem;
+    margin-bottom: 0.3rem;
     color: #d93057;
 }
 
@@ -105,6 +116,23 @@ main {
     font-size: 1.2rem;
     margin: 0;
 }
+
+.last-update {
+    font-size: 0.9rem;
+    color: #555;
+    margin-top: 0.5rem;
+    font-style: italic;
+}
+
+.measures {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0.5rem;
+}
+
 
 .photo-container img {
     border-radius: 20px;

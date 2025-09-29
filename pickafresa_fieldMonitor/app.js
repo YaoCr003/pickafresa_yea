@@ -54,7 +54,26 @@ app.get("/", (req,res) => {
                 mime: f.mime || "image/jpeg"
             }));
 
-            res.render("main", { measure, photos: processedPhotos });
+            const lastMeasureDate = measure.length > 0
+                ? new Date(measure[0].date).toLocaleString("es-MX", {
+                    dateStyle: "short",
+                    timeStyle: "short"
+                })
+                : null;
+
+            const lastPhotoDate = processedPhotos.length > 0
+                ? new Date(processedPhotos[0].date).toLocaleString("es-MX", {
+                    dateStyle: "short",
+                    timeStyle: "short"
+                })
+                : null;
+
+            res.render("main", { 
+                measure, 
+                photos: processedPhotos,
+                lastMeasureDate,
+                lastPhotoDate 
+            });
         });
     });
 });
