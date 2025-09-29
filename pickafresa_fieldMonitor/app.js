@@ -78,6 +78,7 @@ app.get("/", (req,res) => {
     });
 });
 
+// Graph measurements view
 app.get("/graphmeasurements", (req, res) => {
     const sql = `
         SELECT temperature, ambient_humidity, substrate_moisture, percentage_light, date 
@@ -110,6 +111,11 @@ app.get("/graphmeasurements", (req, res) => {
         });
     });
 });
+
+// Historical data menu
+app.get("/historical", (req, res) => {
+    res.render("historical")
+})
 
 
 // Iniciar app en el puerto 3000
