@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Monitoring System</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/img/logo3.png">
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -12,7 +13,10 @@
     <header>
         <img src="/img/0-removebg-preview.png" alt="Logo">
         <h1> Monitoring System 🍓 </h1>
-        <button onclick="window.location.href='/otraVista'"> Datos </button>
+         <div class="buttons">
+            <button onclick="window.location.href='/otraVista'"> Histórico </button>
+            <button onclick="window.location.href='/graphmeasurements'"> 24h </button>
+        </div>
     </header>
 
     <main>
@@ -56,8 +60,6 @@
         </div>
 
     </main>
-
-   <script src="/js/main.js"></script>
 
 </body>
 </html>

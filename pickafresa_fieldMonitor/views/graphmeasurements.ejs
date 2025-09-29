@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Últimas 24h</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/css/graphmeasurements.css">
+</head>
+<body>
+    <div class="background"></div>
+    <header>
+        <h1 class="title">🍓 Datos de las últimas 24h 🌱</h1>
+    </header>
+    
+
+    <main>
+        <div class="chart-container">
+            <canvas id="lineChart"></canvas>
+        </div>
+
+        <!-- 🔘 Botón para regresar al inicio -->
+        <button class="back-btn" onclick="window.location.href='/'"> Inicio </button>
+    
+    </main>
+    
+
+    <script>
+        const labels = <%- JSON.stringify(labels) %>;
+        const temperature = <%- JSON.stringify(temperature) %>;
+        const ambientHumidity = <%- JSON.stringify(ambientHumidity) %>;
+        const substrateMoisture = <%- JSON.stringify(substrateMoisture) %>;
+        const percentageLight = <%- JSON.stringify(percentageLight) %>;
+    </script>
+    <script src="/js/graphmeasurements.js"></script>
+
+</body>
+</html>

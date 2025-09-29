@@ -1,0 +1,84 @@
+const ctx = document.getElementById("lineChart").getContext("2d");
+
+const data = {
+    labels: labels,
+    datasets: [
+        {
+            label: "🌡️ Temperatura (°C)",
+            data: temperature,
+            borderColor: "rgba(230, 57, 70, 1)",
+            backgroundColor: "rgba(230, 57, 70, 0.2)",
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 3,
+            pontBackgroundColor: "rgba(230, 57, 70, 1)",
+            fill: false
+        },
+        {
+            label: "💧 Humedad Ambiente (%)",
+            data: ambientHumidity,
+            borderColor: "rgba(72, 149, 239, 1)",
+            backgroundColor: "rgba(72, 149, 239, 0.2)",
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 3,
+            pointBackgroundColor: "rgba(72, 149, 239, 1)",
+            fill: false
+        },
+        {
+            label: "🌱 Humedad Sustrato (%)",
+            data: substrateMoisture,
+            borderColor: "rgba(38, 166, 91, 1)",
+            backgroundColor: "rgba(38, 166, 91, 0.2)",
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 3,
+            pointBackgroundColor: "rgba(38, 166, 91, 1)",
+            fill: false
+        },
+        {
+            label: "☀️ Luz (%)",
+            data: percentageLight,
+            borderColor: "rgba(255, 193, 7, 1)",
+            backgroundColor: "rgba(255, 193, 7, 0.2)",
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 3,
+            pointBackgroundColor: "rgba(255, 193, 7, 1)",
+            fill: false
+        }
+    ]
+};
+
+const options = {
+    responsive: true,   
+    plugins: {
+        legend: {
+            position: "top",
+            labels: {
+                font: { size: 14, family: "Poppins" }
+            }
+        },
+        title: {
+            display: true,
+            text: "Datos de las últimas 24 horas",
+            font: { size: 18, weight: "bold", family: "Poppins" },
+            color: "#2c3e50"
+        },
+        tooltip: {
+            mode: "index",
+            intersect: false
+        }
+    },
+    interaction: {
+        mode: "nearest",
+        axis: "x",
+        intersect: false
+    },
+};
+
+new Chart(ctx, {
+    type: "line",
+    data: data,
+    options: options
+});

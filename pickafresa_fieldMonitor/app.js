@@ -59,6 +59,39 @@ app.get("/", (req,res) => {
     });
 });
 
+app.get("/graphmeasurements", (req, res) => {
+    const sql = `
+        SELECT temperature, ambient_humidity, substrate_moisture, percentage_light, date 
+        FROM measurements 
+        WHERE date >= NOW() - INTERVAL 1 DAY
+        ORDER BY date ASC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) {
+            console.error("Error fetching last 24h data: ", err);
+            return res.status(500).send("Error fetching data");
+        }
+
+        const labels = results.map(r => 
+            new Date(r.date).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
+        );
+
+        const temperature = results.map(r => r.temperature);
+        const ambientHumidity = results.map(r => r.ambient_humidity);
+        const substrateMoisture = results.map(r => r.substrate_moisture);
+        const percentageLight = results.map(r => r.percentage_light);
+
+        res.render("graphmeasurements", {
+            labels,
+            temperature,
+            ambientHumidity,
+            substrateMoisture,
+            percentageLight
+        });
+    });
+});
+
 
 // Iniciar app en el puerto 3000
 app.listen(PORT, () => {

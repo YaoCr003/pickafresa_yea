@@ -16,22 +16,19 @@ header {
     padding: 1rem 2rem;
     color: white;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-
     animation: colorChange 5s infinite alternate;
 }
 
 @keyframes colorChange {
-    0% {
-        background: #d93057;
-    }
-    100% {
-        background: #30d979;
-    }
+    0% { background: #d93057; }
+    100% { background: #30d979; }
 }
 
 header h1 {
     margin: 0;
     font-size: 2rem;
+    text-align: center;
+    flex: 1; /* fuerza al título a ocupar el centro */
     animation: pulse 3s infinite;
 }
 
@@ -45,6 +42,11 @@ header img {
     height: 80px;
     width: auto;
     border-radius: 50%;
+}
+
+header .buttons {
+    display: flex;
+    gap: 15px; /* espacio entre botones */
 }
 
 header button {
