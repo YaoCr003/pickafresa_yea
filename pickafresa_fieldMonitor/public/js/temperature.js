@@ -1,7 +1,6 @@
 function renderTemperatureChart(labels, data) {
     const ctx = document.getElementById("tempChart").getContext("2d");
 
-    // Generamos colores dinámicos
     const colors = data.map(temp => {
         if (temp < 20) {
             return "blue"; 
@@ -17,7 +16,7 @@ function renderTemperatureChart(labels, data) {
         data: {
             labels: labels,
             datasets: [{
-                label: "Temperatura (°C)",
+                label: "Temperature (°C)",
                 data: data,
                 borderColor: "#e46617ff",               
                 backgroundColor: "rgba(255, 117, 31, 1)",  
@@ -43,4 +42,14 @@ function renderTemperatureChart(labels, data) {
             }
         }
     });
+}
+
+//Droplet effect
+for (let i = 0; i < 20; i++) {
+    const drop = document.createElement("div");
+    drop.classList.add("drop");
+    drop.style.left = Math.random() * 100 + "vw";
+    drop.style.animationDuration = (Math.random() * 3 + 2) + "s";
+    drop.style.opacity = Math.random();
+    document.body.appendChild(drop);
 }

@@ -10,20 +10,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
 </head>
 <body>
-     <a href="/historical" class="back-btn">⬅ Regresar</a>
+     <a href="/historical" class="back-btn">⬅ Back</a>
 
     <div class="container">
 
         <h1> Images </h1>
 
         <form method="GET" action="/historical/images" class="date-form">
-            <label for="start">Inicio:</label>
+            <label for="start">Start:</label>
             <input type="date" id="start" name="start" value="<%= start || '' %>">
 
-            <label for="end">Fin:</label>
+            <label for="end">End:</label>
             <input type="date" id="end" name="end" value="<%= end || '' %>">
 
-            <button type="submit">Filtrar</button>
+            <button type="submit">Filter</button>
         </form>
 
         <% if (message) { %>

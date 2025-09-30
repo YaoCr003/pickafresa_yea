@@ -1,14 +1,13 @@
 function renderTemperatureChart(labels, data) {
     const ctx = document.getElementById("tempChart").getContext("2d");
 
-    // Generamos colores dinámicos
     const colors = data.map(temp => {
         if (temp < 20) {
-            return "blue"; 
+            return "red"; 
         } else if (temp < 30) {
             return "green"; 
         } else {
-            return "orange"; 
+            return "blue"; 
         }
     });
 
@@ -17,7 +16,7 @@ function renderTemperatureChart(labels, data) {
         data: {
             labels: labels,
             datasets: [{
-                label: "Luz %",
+                label: "Light %",
                 data: data,
                 borderColor: "#f5fd05ff",               
                 backgroundColor: "rgba(232, 249, 0, 1)",  

@@ -1,5 +1,7 @@
 body {  
-    font-family: 'Poppins', sans-serif;
+    font-family: "Condiment", cursive;
+    font-weight: 300;
+    font-style: normal;
     margin: 0;
     background: linear-gradient(135deg, #e6f7ee, #d0f0c0, #f8ffe5);
     color: #2c3e50;
@@ -35,7 +37,6 @@ h1 {
     box-shadow: 0 8px 25px rgba(0,0,0,0.15);
 }
 
-/* 🎨 Estilos del botón */
 .back-btn {
     display: block;
     margin: 30px auto;
@@ -56,7 +57,6 @@ h1 {
     transform: scale(1.05);
 }
 
-/* 🔥 Animación del botón */
 @keyframes pulse {
     0% { box-shadow: 0 0 10px rgba(217, 48, 87, 0.7); }
     50% { box-shadow: 0 0 25px rgba(217, 48, 87, 1); }

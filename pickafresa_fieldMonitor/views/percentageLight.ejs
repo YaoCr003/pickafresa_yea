@@ -17,19 +17,19 @@
     <h1>Percentage of light ☀️</h1>
 
     <form method="get" action="/historical/light">
-        <label>Inicio: 
+        <label>Start: 
             <input type="date" name="start" value="<%= start || '' %>">
         </label>
-        <label>Fin: 
+        <label>End: 
             <input type="date" name="end" value="<%= end || '' %>">
         </label>
-        <button type="submit"> Filtrar </button>
+        <button type="submit"> Filter </button>
     </form>
 
     <% if (!start || !end) { %>
-        <p class="message">Selecciona un rango de fechas</p>
+        <p class="message">Select a date range</p>
     <% } else if (labels.length === 0) { %>
-        <p class="message">No hay datos disponibles en este rango 📉</p>
+        <p class="message">No data available in this range</p>
     <% } else { %>
         <div class="chart-container">
             <canvas id="tempChart"></canvas>
@@ -40,7 +40,7 @@
         </script>
     <% } %>
 
-    <a href="/historical" class="temp-btn">Menú</a>
+    <a href="/historical" class="temp-btn">Back</a>
     
 </body>
 </html>

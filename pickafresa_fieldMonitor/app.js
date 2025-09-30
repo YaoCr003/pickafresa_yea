@@ -154,8 +154,8 @@ app.get("/historical/temperature", (req, res) => {
         const data = results.map(r => r.temperature)
 
         res.render("temperature", { labels, data, start, end })
-    })
-})
+    });
+});
 
 // Humidity view
 app.get("/historical/humidity", (req, res) => {
@@ -234,8 +234,8 @@ app.get("/historical/light", (req,res) => {
         const data = results.map(r => r.percentage_light)
 
         res.render("percentageLight", { labels, data, start, end })
-    })
-})
+    });
+});
 
 // Image view
 app.get("/historical/images", (req, res) => {
@@ -262,6 +262,9 @@ app.get("/historical/images", (req, res) => {
             return res.status(500).send("Error fetching images");
         }
 
+        if (results.length === 0) {
+            return res.render("images", { photos: [], start, end, message: "No information found in this range" });
+        }
 
         const processedPhotos = results.map(f => ({
             image: f.image ? Buffer.from(f.image).toString("base64") : null,

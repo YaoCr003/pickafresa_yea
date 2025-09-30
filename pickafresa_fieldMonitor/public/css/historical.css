@@ -1,6 +1,8 @@
 body {
     margin: 0;
-    font-family: 'Poppins', sans-serif;
+     font-family: "Condiment", cursive;
+    font-weight: 300;
+    font-style: normal;
     background: #f8bebe;
     overflow: hidden;
     display: flex;
@@ -88,7 +90,6 @@ h1 {
     transform: scale(1.05);
 }
 
-/* Colores distintos por categoría */
 .card.temperatura { background: #ff7f50; }
 .card.humedad     { background: #4db6ac; }
 .card.luz         { background: #fbc02d; color: black; }

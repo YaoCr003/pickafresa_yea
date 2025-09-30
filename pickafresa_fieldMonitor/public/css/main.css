@@ -1,6 +1,8 @@
 body {
     margin: 0;
-    font-family: 'Poppins', sans-serif;
+    font-family: "Condiment", cursive;
+    font-weight: 300;
+    font-style: normal;
     background: linear-gradient(to bottom right, #f8f9fa, #e0ffe4);
     display: flex;
     overflow: hidden;
@@ -19,16 +21,11 @@ header {
     animation: colorChange 5s infinite alternate;
 }
 
-@keyframes colorChange {
-    0% { background: #d93057; }
-    100% { background: #30d979; }
-}
-
 header h1 {
     margin: 0;
     font-size: 2rem;
     text-align: center;
-    flex: 1; /* fuerza al título a ocupar el centro */
+    flex: 1; 
     animation: pulse 3s infinite;
 }
 
@@ -46,23 +43,56 @@ header img {
 
 header .buttons {
     display: flex;
-    gap: 15px; /* espacio entre botones */
+    gap: 15px; 
 }
 
 header button {
-    background: white;
-    color: #d93057;
+    background: linear-gradient(135deg, #ff4b5c, #d93057); /* Rojo fresa */
+    color: #fff;
     border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 25px;
+    padding: 0.7rem 1.4rem;
+    border-radius: 30px;
     font-size: 1rem;
+    font-weight: bold;
     cursor: pointer;
-    transition: background 0.3s ease;
+    box-shadow: 0 4px 10px rgba(217, 48, 87, 0.3);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
 }
 
 header button:hover {
-    background: #fce4ec;
+    background: linear-gradient(135deg, #d93057, #43a047); /* De fresa a verde hoja */
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 6px 15px rgba(0, 100, 0, 0.3);
 }
+
+header button:active {
+    transform: scale(0.95);
+}
+
+header button::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -75%;
+    width: 50%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: skewX(-25deg);
+}
+
+
+header button:hover::before {
+    animation: shine 0.8s forwards;
+}
+
+@keyframes shine {
+    100% {
+        left: 125%;
+    }
+}
+
 
 main {
     display: flex;
@@ -86,7 +116,7 @@ main {
     padding: 1rem;
     margin: 1rem 0;
     width: 90%;
-    max-width: 250%;
+    max-width: 200%;
     text-align: center;
     transition: transform 0.2s;
 }
@@ -130,7 +160,7 @@ main {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 0.5rem;
+    padding: 0.1rem;
 }
 
 

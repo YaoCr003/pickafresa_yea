@@ -28,7 +28,6 @@ body::before {
     z-index: 0;
 }
 
-/* Esquina derecha */
 body::after {
     content: "";
     position: absolute;
@@ -45,7 +44,6 @@ body::after {
     z-index: 0;
 }
 
-/* Rayo central */
 .rayo-centro {
     position: absolute;
     top: 0;
@@ -54,7 +52,7 @@ body::after {
     width: 500px;
     height: 400px;
     background: linear-gradient(to bottom, rgba(255, 255, 180, 0.6), transparent 70%);
-    clip-path: polygon(50% 0, 0 100%, 100% 100%); /* 🔻 Triángulo hacia abajo */
+    clip-path: polygon(50% 0, 0 100%, 100% 100%);
     opacity: 0;
     animation: rayEffect 6s infinite ease-in-out;
     animation-delay: 1.5s;

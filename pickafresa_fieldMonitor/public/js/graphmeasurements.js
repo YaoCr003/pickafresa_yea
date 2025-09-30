@@ -4,7 +4,7 @@ const data = {
     labels: labels,
     datasets: [
         {
-            label: "🌡️ Temperatura (°C)",
+            label: "🌡️ Temperature (°C)",
             data: temperature,
             borderColor: "rgba(230, 57, 70, 1)",
             backgroundColor: "rgba(230, 57, 70, 0.2)",
@@ -15,7 +15,7 @@ const data = {
             fill: false
         },
         {
-            label: "💧 Humedad Ambiente (%)",
+            label: "💧 Ambient Humidity (%)",
             data: ambientHumidity,
             borderColor: "rgba(72, 149, 239, 1)",
             backgroundColor: "rgba(72, 149, 239, 0.2)",
@@ -26,7 +26,7 @@ const data = {
             fill: false
         },
         {
-            label: "🌱 Humedad Sustrato (%)",
+            label: "🌱 Substrate moisture (%)",
             data: substrateMoisture,
             borderColor: "rgba(38, 166, 91, 1)",
             backgroundColor: "rgba(38, 166, 91, 0.2)",
@@ -37,7 +37,7 @@ const data = {
             fill: false
         },
         {
-            label: "☀️ Luz (%)",
+            label: "☀️ Light (%)",
             data: percentageLight,
             borderColor: "rgba(255, 193, 7, 1)",
             backgroundColor: "rgba(255, 193, 7, 0.2)",
@@ -58,12 +58,6 @@ const options = {
             labels: {
                 font: { size: 14, family: "Poppins" }
             }
-        },
-        title: {
-            display: true,
-            text: "Datos de las últimas 24 horas",
-            font: { size: 18, weight: "bold", family: "Poppins" },
-            color: "#2c3e50"
         },
         tooltip: {
             mode: "index",

@@ -6,6 +6,9 @@
     <title>Monitoring System</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/img/logo3.png">
     <link rel="stylesheet" href="/css/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
@@ -14,7 +17,7 @@
         <img src="/img/0-removebg-preview.png" alt="Logo">
         <h1> Monitoring System 🍓 </h1>
          <div class="buttons">
-            <button onclick="window.location.href='/historical'"> Histórico </button>
+            <button onclick="window.location.href='/historical'"> Historical </button>
             <button onclick="window.location.href='/graphmeasurements'"> 24h </button>
         </div>
     </header>
@@ -27,32 +30,32 @@
             <% if (lastMeasureDate) { %>
                 <div class="card time-card">
                     <i class="fa-solid fa-clock"></i>
-                    <p>Última actualización: <%= lastMeasureDate %></p>
+                    <p>Last update: <%= lastMeasureDate %></p>
                 </div>
             <% } %>
 
             <!-- Temperature container -->
             <div class="card">
                 <i class="fa-solid fa-temperature-high"></i>
-                <p> Temperatura: <%= measure[0]?.temperature %> °C </p>
+                <p> Temperature: <%= measure[0]?.temperature %> °C </p>
             </div>
 
             <!-- Ambient humidity container -->
             <div class="card">
                 <i class="fa-solid fa-droplet"></i>
-                <p> Humedad ambiental: <%= measure[0]?.ambient_humidity %> % </p>
+                <p> Ambient humidity: <%= measure[0]?.ambient_humidity %> % </p>
             </div>
 
             <!-- Substrate moisture container -->
             <div class="card">
                 <i class="fa-solid fa-seedling"></i>
-                <p> Humedad del sustrato: <%= measure[0]?.substrate_moisture %> % </p>
+                <p> Substrate moisture: <%= measure[0]?.substrate_moisture %> % </p>
             </div>
 
             <!-- Light container -->
             <div class="card">
                 <i class="fa-solid fa-sun"></i>
-                <p>Luz: <%= measure[0]?.percentage_light %>%</p>
+                <p>Light: <%= measure[0]?.percentage_light %>%</p>
             </div>
 
          </div>
@@ -63,10 +66,10 @@
                 <% if (photos.length > 0  && photos[0].image) { %>
                     <img src="data:<%= photos[0].mime %>;base64,<%= photos[0].image %>" alt="Monitoring photo">
                     <% if (lastPhotoDate) { %>
-                        <p class="last-update">Última foto subida: <%= lastPhotoDate %></p>
+                        <p class="last-update">Last photo uploaded: <%= lastPhotoDate %></p>
                     <% } %>
                 <% } else { %>
-                    <p> No hay foto disponible </p>
+                    <p> No photo available </p>
                 <% } %>
             </div>
         </div>
