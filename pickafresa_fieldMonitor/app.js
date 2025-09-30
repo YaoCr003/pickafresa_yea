@@ -117,6 +117,44 @@ app.get("/historical", (req, res) => {
     res.render("historical")
 })
 
+app.get("/historical/temperature", (req, res) => {
+    const { start, end } = req.query;
+
+    if (!start || !end) {
+        return res.render("temperature", { labels: [], data: [], start, end });
+    }
+
+    const startDate = `${start} 00:00:00`;
+    const endDate = `${end} 23:59:59`;
+
+    const sql = `
+        SELECT temperature, date 
+        FROM measurements 
+        WHERE date BETWEEN ? AND ?
+        ORDER BY date ASC
+    `;
+
+
+    db.query(sql, [startDate, endDate], (err, results) => {
+        if (err) {
+            console.error("Error fetching temperature data: ", err)
+            return res.status(500).send("Error feching data")
+        }
+
+         console.log("Resultados query:", results);
+
+        const labels = results.map(r =>
+            new Date (r.date).toLocaleString("es-MX", {
+                dateStyle: "short",
+                timeStyle: "short"
+            })
+        );
+
+        const data = results.map(r => r.temperature)
+
+        res.render("temperature", { labels, data, start, end })
+    })
+})
 
 // Iniciar app en el puerto 3000
 app.listen(PORT, () => {

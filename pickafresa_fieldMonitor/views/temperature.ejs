@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temperatura</title>
+    <link rel="stylesheet" href="/css/temperature.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    
+    <h1>Temperatura 🌡️</h1>
+
+    <form method="get" action="/historical/temperature">
+        <label>Inicio: 
+            <input type="date" name="start" value="<%= start || '' %>">
+        </label>
+        <label>Fin: 
+            <input type="date" name="end" value="<%= end || '' %>">
+        </label>
+        <button type="submit"> Filtrar </button>
+    </form>
+
+    <% if (!start || !end) { %>
+        <p class="message">Selecciona un rango de fechas</p>
+    <% } else if (labels.length === 0) { %>
+        <p class="message">No hay datos disponibles en este rango 📉</p>
+    <% } else { %>
+        <div class="chart-container">
+            <canvas id="tempChart"></canvas>
+        </div>
+        <script src="/js/temperature.js"></script>
+        <script>
+            renderTemperatureChart(<%- JSON.stringify(labels) %>, <%- JSON.stringify(data) %>);
+        </script>
+    <% } %>
+
+     <a href="/historical" class="temp-btn">Menú</a>
+
+      <script>
+        for (let i = 0; i < 20; i++) {
+            const drop = document.createElement("div");
+            drop.classList.add("drop");
+            drop.style.left = Math.random() * 100 + "vw";
+            drop.style.animationDuration = (Math.random() * 3 + 2) + "s";
+            drop.style.opacity = Math.random();
+            document.body.appendChild(drop);
+        }
+    </script>
+
+</body>
+</html>
