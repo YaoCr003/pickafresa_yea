@@ -157,7 +157,7 @@ app.get("/historical/temperature", (req, res) => {
     })
 })
 
-// 
+// Humidity view
 app.get("/historical/humidity", (req, res) => {
     const { start, end } = req.query
 
@@ -236,6 +236,45 @@ app.get("/historical/light", (req,res) => {
         res.render("percentageLight", { labels, data, start, end })
     })
 })
+
+// Image view
+app.get("/historical/images", (req, res) => {
+    const { start, end } = req.query;
+
+    if (!start || !end) {
+        return res.render("images", { photos: [], start, end, message: "You must select a date range" });
+    }
+
+    const startDate = `${start} 00:00:00`;
+    const endDate = `${end} 23:59:59`;
+
+    const sql = `
+        SELECT image, mime, date 
+        FROM images 
+        WHERE date BETWEEN ? AND ?
+        ORDER BY date DESC
+        LIMIT 10
+    `;
+
+    db.query(sql, [startDate, endDate], (err, results) => {
+        if (err) {
+            console.error("Error fetching images: ", err);
+            return res.status(500).send("Error fetching images");
+        }
+
+
+        const processedPhotos = results.map(f => ({
+            image: f.image ? Buffer.from(f.image).toString("base64") : null,
+            mime: f.mime || "image/jpeg",
+            date: new Date(f.date).toLocaleString("es-MX", {
+                dateStyle: "short",
+                timeStyle: "short"
+            })
+        }));
+
+        res.render("images", { photos: processedPhotos, start, end, message: null });
+    });
+});
 
 // Iniciar app en el puerto 3000
 app.listen(PORT, () => {

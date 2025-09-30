@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Images</title>
+    <link rel="stylesheet" href="/css/images.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+</head>
+<body>
+     <a href="/historical" class="back-btn">⬅ Regresar</a>
+
+    <div class="container">
+
+        <h1> Images </h1>
+
+        <form method="GET" action="/historical/images" class="date-form">
+            <label for="start">Inicio:</label>
+            <input type="date" id="start" name="start" value="<%= start || '' %>">
+
+            <label for="end">Fin:</label>
+            <input type="date" id="end" name="end" value="<%= end || '' %>">
+
+            <button type="submit">Filtrar</button>
+        </form>
+
+        <% if (message) { %>
+            <p class="message"><%= message %></p>
+        <% } %>
+
+        <div class="gallery">
+            <% photos.forEach(photo => { %>
+                <div class="card">
+                    <img src="data:<%= photo.mime %>;base64,<%= photo.image %>" alt="Imagen">
+                    <div class="card-info">
+                        <p><%= photo.date %></p>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+
+    </div>
+    
+    <div class="flash"></div>
+</body>
+</html>

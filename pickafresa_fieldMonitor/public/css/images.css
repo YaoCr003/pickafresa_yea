@@ -1,0 +1,131 @@
+/* Fondo animado con flashes */
+body {
+  margin: 0;
+  font-family: "Knewave", system-ui;
+  font-weight: 400;
+  font-style: normal;
+  color: #fff;
+  overflow-x: hidden;
+  position: relative;
+  background: linear-gradient(270deg, #1e3c72, #2a5298, #6a11cb, #2575fc);
+  background-size: 800% 800%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.back-btn {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 16px;
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 120px auto 40px;
+  padding: 20px;
+  text-align: center;
+}
+
+.date-form {
+   margin: 30px 0;
+   display: flex;
+   justify-content: center;
+   gap: 10px;
+   flex-wrap: wrap;
+}
+
+.date-form input {
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+}
+
+.date-form button {
+  padding: 12px 25px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(45deg, #ff416c, #ff4b2b);
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(255, 65, 108, 0.4);
+}
+
+.date-form button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(255, 75, 43, 0.6);
+}
+
+/* Cards grid */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 25px;
+  margin-top: 40px;
+  padding: 0 20px;
+}
+
+/* Card */
+.card {
+  background: rgba(255,255,255,0.1);
+  border-radius: 18px;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+  transform: scale(1);
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-8px) scale(1.05);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+}
+
+.card img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  transition: all 0.4s ease;
+}
+
+.card img:hover {
+    transform: scale(1.1);
+}
+
+.card-info {
+  padding: 12px;
+  background: rgba(0,0,0,0.3);
+}
+
+.card-info p {
+  margin: 0;
+  font-size: 14px;
+  color: #f1f1f1;
+  font-weight: 500;
+}
