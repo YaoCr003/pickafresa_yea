@@ -157,6 +157,47 @@ app.get("/historical/temperature", (req, res) => {
     })
 })
 
+// 
+app.get("/historical/humidity", (req, res) => {
+    const { start, end } = req.query
+
+    if (!start || !end) {
+        return res.render("humidity", { labels: [], data: [], start, end, message: "You must select a date range" });
+    }
+
+    const startDate = `${start} 00:00:00`;
+    const endDate = `${end} 23:59:59`;
+
+    const sql = `
+        SELECT ambient_humidity, substrate_moisture, date 
+        FROM measurements 
+        WHERE date BETWEEN ? AND ?
+        ORDER BY date ASC
+    `;
+
+    db.query(sql, [startDate, endDate], (err, results) => {
+        if (err) {
+            console.error("Error fetching humidity data: ", err);
+            return res.status(500).send("Error fetching data");
+        }
+
+        if (results.length === 0) {
+            return res.render("humidity", { data: [], start, end, message: "No information found in this range" });
+        }
+
+        const data = results.map(r => ({
+            ambient: r.ambient_humidity,
+            substrate: r.substrate_moisture,
+            date: new Date(r.date).toLocaleString("es-MX", {
+                dateStyle: "short",
+                timeStyle: "short"
+            })
+        }));
+
+        res.render("humidity", { data, start, end, message: null });
+    });
+})
+
 //View percentage of light
 app.get("/historical/light", (req,res) => {
     const { start, end } = req.query
