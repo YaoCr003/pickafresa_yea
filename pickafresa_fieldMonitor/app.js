@@ -117,6 +117,7 @@ app.get("/historical", (req, res) => {
     res.render("historical")
 })
 
+// Temperature view
 app.get("/historical/temperature", (req, res) => {
     const { start, end } = req.query;
 
@@ -153,6 +154,45 @@ app.get("/historical/temperature", (req, res) => {
         const data = results.map(r => r.temperature)
 
         res.render("temperature", { labels, data, start, end })
+    })
+})
+
+//View percentage of light
+app.get("/historical/light", (req,res) => {
+    const { start, end } = req.query
+
+    if (!start || !end) {
+        return res.render("percentageLight", { labels: [], data: [], start, end });
+    }
+
+    const startDate = `${start} 00:00:00`;
+    const endDate = `${end} 23:59:59`;
+
+    const sql = `
+        SELECT percentage_light, date 
+        FROM measurements 
+        WHERE date BETWEEN ? AND ?
+        ORDER BY date ASC
+    `;
+
+    db.query(sql, [startDate, endDate], (err, results) => {
+        if (err) {
+            console.error("Error fetching percentage ligth data: ", err)
+            return res.status(500).send("Error feching data")
+        }
+
+         console.log("Resultados query:", results);
+
+        const labels = results.map(r =>
+            new Date (r.date).toLocaleString("es-MX", {
+                dateStyle: "short",
+                timeStyle: "short"
+            })
+        );
+
+        const data = results.map(r => r.percentage_light)
+
+        res.render("percentageLight", { labels, data, start, end })
     })
 })
 

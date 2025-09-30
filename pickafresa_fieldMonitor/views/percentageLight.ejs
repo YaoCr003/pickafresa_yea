@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Percentage of light</title>
+    <link rel="stylesheet" href="/css/percentageLight.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <div class="rayo-centro"></div>
+
+    <h1>Percentage of light ☀️</h1>
+
+    <form method="get" action="/historical/light">
+        <label>Inicio: 
+            <input type="date" name="start" value="<%= start || '' %>">
+        </label>
+        <label>Fin: 
+            <input type="date" name="end" value="<%= end || '' %>">
+        </label>
+        <button type="submit"> Filtrar </button>
+    </form>
+
+    <% if (!start || !end) { %>
+        <p class="message">Selecciona un rango de fechas</p>
+    <% } else if (labels.length === 0) { %>
+        <p class="message">No hay datos disponibles en este rango 📉</p>
+    <% } else { %>
+        <div class="chart-container">
+            <canvas id="tempChart"></canvas>
+        </div>
+        <script src="/js/percentageLight.js"></script>
+        <script>
+            renderTemperatureChart(<%- JSON.stringify(labels) %>, <%- JSON.stringify(data) %>);
+        </script>
+    <% } %>
+
+    <a href="/historical" class="temp-btn">Menú</a>
+    
+</body>
+</html>

@@ -1,0 +1,175 @@
+body {
+    margin: 0;
+    font-family: "Knewave", system-ui;
+    font-weight: 400;
+    font-style: normal;
+    background: linear-gradient(135deg, #fff9c4, #ffe082, #ffca28);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+    overflow: hidden;
+    position: relative;   
+}
+
+body::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 300px;
+    height: 400px;
+    background: linear-gradient(45deg, rgba(255, 255, 200, 0.6), transparent 70%);
+    clip-path: polygon(0 0, 100% 0, 0 100%); /* 🔺 Triángulo */
+    opacity: 0;
+    animation: rayEffect 6s infinite ease-in-out;
+    transform-origin: top left;
+    z-index: 0;
+}
+
+/* Esquina derecha */
+body::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 300px;
+    height: 400px;
+    background: linear-gradient(-45deg, rgba(255, 255, 200, 0.6), transparent 70%);
+    clip-path: polygon(100% 0, 0 0, 100% 100%);
+    opacity: 0;
+    animation: rayEffect 6s infinite ease-in-out;
+    animation-delay: 3s;
+    transform-origin: top right;
+    z-index: 0;
+}
+
+/* Rayo central */
+.rayo-centro {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 500px;
+    height: 400px;
+    background: linear-gradient(to bottom, rgba(255, 255, 180, 0.6), transparent 70%);
+    clip-path: polygon(50% 0, 0 100%, 100% 100%); /* 🔻 Triángulo hacia abajo */
+    opacity: 0;
+    animation: rayEffect 6s infinite ease-in-out;
+    animation-delay: 1.5s;
+    pointer-events: none;
+    z-index: 0;
+}
+
+@keyframes rayEffect {
+    0%, 100% { opacity: 0; transform: scale(0.8); }
+    30% { opacity: 1; transform: scale(1.05); }
+    60% { opacity: 0.5; }
+}
+
+h1 {
+    color: #ff9800;
+    text-align: center;
+    margin-bottom: 20px;
+    animation: fadeInDown 1s ease;
+    text-shadow: 2px 2px 6px rgba(255, 193, 7, 0.8);
+    z-index: 1;
+}
+
+form {
+    margin-bottom: 30px;
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    z-index: 1;
+}
+
+input, button {
+    padding: 10px;
+    border-radius: 10px;
+    border: none;
+    outline: none;
+    font-size: 14px;
+}
+
+input {
+    border: 2px solid #fdd835;
+    background: #fffde7;
+    color: #333;
+}
+
+button {
+    background: linear-gradient(45deg, #fbc02d, #f57f17);
+    color: white;
+    cursor: pointer;
+    transition: transform 0.3s, box-shadow 0.3s;
+    font-weight: bold;
+}
+
+button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(255, 193, 7, 0.6);
+}
+
+.message {
+    font-size: 20px;
+    font-weight: bold;
+    color: #0288d1;
+    animation: pulse 1.5s infinite;
+}
+
+.chart-container {
+    width: 90%;
+    max-width: 850px;
+    background: #fffffe;
+    padding: 20px;
+    border-radius: 20px;
+    box-shadow: 0 8px 20px rgba(255, 193, 7, 0.4);
+    animation: fadeIn 1s ease;
+    z-index: 1;
+}
+
+.temp-btn {
+    margin-top: 20px;
+    padding: 15px 30px;
+    font-size: 16px;
+    background: linear-gradient(45deg, #fdd835, #f57f17);
+    color: white;
+    border-radius: 50px;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    animation: bounce 2s infinite;
+    text-decoration: none;
+    display: inline-block;
+    transition: transform 0.2s, box-shadow 0.3s;
+    z-index: 1;
+}
+
+.temp-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 8px 20px rgba(255, 152, 0, 0.5);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-30px); }
+    to { opacity: 1; transform: translateY(0); } 
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 0.7; }
+    50% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.7;}
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-8px); }
+    60% { transform: translateY(-4px); }
+}   
