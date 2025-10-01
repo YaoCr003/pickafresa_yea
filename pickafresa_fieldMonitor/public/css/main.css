@@ -14,11 +14,21 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #d93057;
+    background: linear-gradient(to right, #43a047, #d93057);
     padding: 1rem 2rem;
     color: white;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    animation: colorChange 5s infinite alternate;
+    background-size: 200% 100%; 
+    animation: gradientShift 5s infinite alternate;
+}
+
+@keyframes gradientShift {
+    0% {
+        background-position: 0% 0%;
+    }
+    100% {
+        background-position: 100% 0%;
+    }
 }
 
 header h1 {
@@ -169,4 +179,57 @@ main {
     width: 100%;
     max-width: 400px;
     box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+}
+
+/* Temperature */
+.high-temp { background: #ff6b6b; color: #fff; animation: pulseCard 1.2s infinite; }
+.low-temp { background: #4dabf7; color: #fff; animation: pulseCard 1.2s infinite; }
+
+/* Ambient humidity */
+.high-ambient { background: #ff6b6b; color: #fff; animation: pulseCard 1.2s infinite; }
+.low-ambient { background: #4dabf7; color: #fff; animation: pulseCard 1.2s infinite; }
+
+/* Substrate moisture */
+.high-substrate { background: #ff6b6b; color: #fff; animation: pulseCard 1.2s infinite; }
+.low-substrate { background: #4dabf7; color: #fff; animation: pulseCard 1.2s infinite; }
+
+/* Light */
+.low-light { background: #ff6b6b; color: #fff; animation: pulseCard 1.2s infinite; }
+
+@keyframes pulseCard {
+    0% { transform: scale(1); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    50% { transform: scale(1.05); box-shadow: 0 6px 15px rgba(0,0,0,0.3); }
+    100% { transform: scale(1); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+}
+
+/* Alerts */
+.alert-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem; /* Espacio entre alertas */
+    z-index: 1000;
+}
+
+.alert {
+    background: #ff4b5c;
+    color: #fff;
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 1rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    opacity: 0;
+    transform: translateX(100%);
+    animation: slideIn 0.5s forwards, fadeOut 0.5s 3s forwards;
+}
+
+@keyframes slideIn {
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeOut {
+    to { opacity: 0; transform: translateX(100%); }
 }

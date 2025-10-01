@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <div class="alert-container" id="alertContainer"></div>
 
     <header>
         <img src="/img/0-removebg-preview.png" alt="Logo">
@@ -35,25 +36,25 @@
             <% } %>
 
             <!-- Temperature container -->
-            <div class="card">
+            <div class="card <%= measure[0]?.temperature > 26 ? 'high-temp' : measure[0]?.temperature < 15 ? 'low-temp' : '' %>">
                 <i class="fa-solid fa-temperature-high"></i>
                 <p> Temperature: <%= measure[0]?.temperature %> °C </p>
             </div>
 
             <!-- Ambient humidity container -->
-            <div class="card">
+            <div class="card <%= measure[0]?.ambient_humidity > 80 ? 'high-ambient' : measure[0]?.ambient_humidity < 60 ? 'low-ambient' : '' %>">
                 <i class="fa-solid fa-droplet"></i>
                 <p> Ambient humidity: <%= measure[0]?.ambient_humidity %> % </p>
             </div>
 
             <!-- Substrate moisture container -->
-            <div class="card">
+            <div class="card <%= measure[0]?.substrate_moisture > 70 ? 'high-substrate' : measure[0]?.substrate_moisture < 60 ? 'low-substrate' : '' %>">
                 <i class="fa-solid fa-seedling"></i>
                 <p> Substrate moisture: <%= measure[0]?.substrate_moisture %> % </p>
             </div>
 
             <!-- Light container -->
-            <div class="card">
+            <div class="card <%= measure[0]?.percentage_light < 70 ? 'low-light' : '' %>">
                 <i class="fa-solid fa-sun"></i>
                 <p>Light: <%= measure[0]?.percentage_light %>%</p>
             </div>
@@ -75,6 +76,45 @@
         </div>
 
     </main>
+
+    <script>
+        const alerts = [];
+
+        <% if (measure[0]?.temperature > 26) { %>
+            alerts.push("⚠️ Very high temperature!");
+        <% } else if (measure[0]?.temperature < 15) { %>
+            alerts.push("❄️ Low temperature!");
+        <% } %>
+
+        <% if (measure[0]?.ambient_humidity > 80) { %>
+            alerts.push("💧 High humidity, risk of fungi!");
+        <% } else if (measure[0]?.ambient_humidity < 60) { %>
+            alerts.push("💧 Low ambient humidity, probability of water stress!");
+        <% } %>
+
+        <% if (measure[0]?.substrate_moisture > 70) { %>
+            alerts.push("🌱 High substrate humidity, risk of rot!");
+        <% } else if (measure[0]?.substrate_moisture < 60) { %>
+            alerts.push("🌱 Low substrate moisture, risk of water stress!");
+        <% } %>
+
+        <% if (measure[0]?.percentage_light < 70) { %>
+            alerts.push("☀️Little light available!");
+        <% } %>
+
+        const container = document.getElementById("alertContainer");
+
+        alerts.forEach(msg => {
+            const div = document.createElement("div");
+            div.className = "alert";
+            div.textContent = msg;
+            container.appendChild(div);
+
+            // Remover alerta después de 4s
+            setTimeout(() => div.remove(), 4000);
+        });
+    </script>
+
 
 </body>
 </html>
