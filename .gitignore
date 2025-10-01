@@ -1,0 +1,6 @@
+# MACOS specific files
+pickafresa_cropSensor/.DS_Store
+.DS_Store
+
+# Visual Studio Code specific files
+pickafresa_cropSensor.code-workspace
