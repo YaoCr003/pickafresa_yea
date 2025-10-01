@@ -8,3 +8,16 @@ for (let i = 0; i < 60; i++) {
     drop.style.animationDelay = Math.random() * 5 + "s";
     rain.appendChild(drop);
 }
+
+window.addEventListener("load", () => {
+    const loader = document.getElementById("loader");
+    loader.classList.add("hidden"); 
+});
+
+
+document.querySelectorAll("a, button[type=submit]").forEach(el => {
+    el.addEventListener("click", () => {
+        const loader = document.getElementById("loader");
+        loader.classList.remove("hidden");
+    });
+});

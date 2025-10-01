@@ -12,6 +12,11 @@
 </head>
 <body>
 
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+
     <span class="particle">🍓</span>
     <span class="particle">🍃</span>
     <span class="particle">🍓</span>
@@ -52,5 +57,19 @@
             </a>
         </div>
     </div>
+
+    <script>
+        window.addEventListener("load", () => {
+            const loader = document.getElementById("loader");
+            loader.classList.add("hidden");
+        });
+
+        document.querySelectorAll("a, button").forEach(el => {
+            el.addEventListener("click", () => {
+                const loader = document.getElementById("loader");
+                loader.classList.remove("hidden");
+            });
+        });
+    </script>
 </body>
 </html>

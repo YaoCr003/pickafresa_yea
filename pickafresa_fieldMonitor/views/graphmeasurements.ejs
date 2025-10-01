@@ -10,6 +10,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
 </head>
 <body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+
     <div class="background"></div>
     <header>
         <h1 class="title">🍓 Data from the last 24 hours 🌱</h1>
@@ -32,6 +38,7 @@
         const ambientHumidity = <%- JSON.stringify(ambientHumidity) %>;
         const substrateMoisture = <%- JSON.stringify(substrateMoisture) %>;
         const percentageLight = <%- JSON.stringify(percentageLight) %>;
+
     </script>
     <script src="/js/graphmeasurements.js"></script>
 

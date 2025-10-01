@@ -1,7 +1,11 @@
-alerts.forEach(msg => {
-    const div = document.createElement("div");
-    div.className = "alert";
-    div.textContent = msg;
-    document.body.appendChild(div);
-    setTimeout(() => div.remove(), 4000);
+window.addEventListener("load", () => {
+    const loader = document.getElementById("loader");
+    loader.classList.add("hidden");
+});
+
+document.querySelectorAll("a, button").forEach(el => {
+    el.addEventListener("click", () => {
+        const loader = document.getElementById("loader");
+        loader.classList.remove("hidden");
+    });
 });

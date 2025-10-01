@@ -196,7 +196,7 @@ app.get("/historical/humidity", (req, res) => {
 
         res.render("humidity", { data, start, end, message: null });
     });
-})
+});
 
 //View percentage of light
 app.get("/historical/light", (req,res) => {
@@ -280,6 +280,6 @@ app.get("/historical/images", (req, res) => {
 });
 
 // Iniciar app en el puerto 3000
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`)
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://10.25.87.195:${PORT}`)
 });

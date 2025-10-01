@@ -43,3 +43,4 @@ function renderTemperatureChart(labels, data) {
         }
     });
 }
+

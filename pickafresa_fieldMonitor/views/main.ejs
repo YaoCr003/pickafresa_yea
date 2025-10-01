@@ -12,6 +12,12 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+
     <div class="alert-container" id="alertContainer"></div>
 
     <header>
@@ -77,6 +83,7 @@
 
     </main>
 
+    <script src="/js/main.js"></script>
     <script>
         const alerts = [];
 
@@ -114,7 +121,6 @@
             setTimeout(() => div.remove(), 4000);
         });
     </script>
-
 
 </body>
 </html>
