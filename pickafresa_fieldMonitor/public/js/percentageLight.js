@@ -1,11 +1,9 @@
 function renderTemperatureChart(labels, data) {
     const ctx = document.getElementById("tempChart").getContext("2d");
 
-    const colors = data.map(temp => {
-        if (temp < 20) {
-            return "red"; 
-        } else if (temp < 30) {
-            return "green"; 
+    const colors = data.map(light => {
+        if (light >= 70) {
+            return "green";  
         } else {
             return "blue"; 
         }
@@ -28,6 +26,7 @@ function renderTemperatureChart(labels, data) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: { display: true }
             },

@@ -8,7 +8,8 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 h1 {
@@ -97,4 +98,80 @@ h1 {
 #loader.hidden {
     opacity: 0;
     visibility: hidden;
+}
+
+/* Responsive */
+
+@media (max-width: 1024px) {
+    h1 {
+        font-size: 2rem;
+        margin: 20px 0;
+    }
+
+    .chart-container {
+        width: 90%;
+        padding: 15px;
+    }
+
+    .back-btn {
+        font-size: 1rem;
+        padding: 10px 20px;
+    }
+}
+
+
+@media (max-width: 768px) {
+    
+    body {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        text-align: center;
+        overflow-y: auto;
+    }
+
+    h1 {
+        font-size: 1.6rem;
+        margin: 15px 0;
+    }
+
+    .chart-container {
+        width: 95%;
+        max-width: 500px;
+        margin: 0 auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    canvas {
+        max-width: 100%;
+        height: auto;
+    }
+
+    .back-btn {
+        font-size: 0.95rem;
+        padding: 8px 18px;
+        margin: 20px auto;
+        width: 80%;
+    }
+}
+
+@media (max-width: 480px) {
+    h1 {
+        font-size: 1.4rem;
+    }
+
+    .chart-container {
+        width: 100%;
+        padding: 8px;
+        margin: 0 auto;
+    }
+
+    .back-btn {
+        font-size: 0.85rem;
+        padding: 7px 15px;
+    }
 }

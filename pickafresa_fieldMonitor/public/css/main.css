@@ -5,7 +5,8 @@ body {
     font-style: normal;
     background: linear-gradient(to bottom right, #f8f9fa, #e0ffe4);
     display: flex;
-    overflow: hidden;
+    overflow-x: hidden; 
+    overflow-y: auto;  
     flex-direction: column;
     min-height: 100vh;
 }
@@ -108,7 +109,7 @@ main {
     display: flex;
     flex: 1;
     gap: 2rem;
-    padding: 2rem;
+    padding: 2rem;      
 }
 
 .measures, .photo {
@@ -269,4 +270,130 @@ main {
 #loader.hidden {
     opacity: 0;
     visibility: hidden;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    header {
+        flex-direction: column;
+        text-align: center;
+        padding: 1rem;
+    }
+
+    header img {
+        height: 60px;
+        margin-bottom: 0.5rem;
+    }
+
+    header h1 {
+        font-size: 1.6rem;
+    }
+
+    header .buttons {
+        margin-top: 0.8rem;
+    }
+
+    main {
+        flex-direction: column;
+        padding: 1rem;
+        align-items: center;
+    }
+
+    .measures, .photo {
+        width: 100%;
+        padding: 0.5rem;
+    }
+
+    .card {
+        width: 100%;
+        max-width: 90%;
+    }
+
+    .photo-container img {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    body {
+        font-size: 14px;
+    }
+
+    header {
+        padding: 0.8rem;
+    }
+
+    header img {
+        height: 50px;
+    }
+
+    header h1 {
+        font-size: 1.3rem;
+    }
+
+    header .buttons {
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+    }
+
+    header button {
+        width: 100%;
+        padding: 0.6rem;
+        font-size: 0.9rem;
+    }
+
+    main {
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1rem;
+        align-items: center;
+    }
+
+    .card {
+        margin: 0.5rem 0;
+        padding: 0.8rem;
+        font-size: 0.9rem;
+    }
+
+    .card i {
+        font-size: 1.2rem;
+    }
+
+    .photo-container img {
+        max-width: 100%;
+        border-radius: 12px;
+    }
+
+    .last-update {
+        font-size: 0.8rem;
+    }
+
+    .alert {
+        font-size: 0.85rem;
+        padding: 0.7rem 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    header h1 {
+        font-size: 1.1rem;
+    }
+
+    header img {
+        height: 40px;
+    }
+
+    header button {
+        font-size: 0.8rem;
+        padding: 0.5rem;
+    }
+
+    .card p {
+        font-size: 0.85rem;
+    }
+
+    .card {
+        padding: 0.6rem;
+    }
 }

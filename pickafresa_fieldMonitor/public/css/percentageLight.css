@@ -207,3 +207,147 @@ button:hover {
     opacity: 0;
     visibility: hidden;
 }
+
+/* Responsive */
+@media (max-width: 1024px) {
+
+    body {
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    body::before {
+    width: 40vw;      /* antes: 300px */
+    height: 50vh;     /* antes: 400px */
+    }
+
+    body::after {
+        width: 40vw;      /* antes: 300px */
+        height: 50vh;     /* antes: 400px */
+    }
+
+    .rayo-centro {
+        width: 70vw;      /* antes: 500px */
+        max-width: 500px; /* sigue limitando en desktop */
+        height: 50vh;     /* antes: 400px */
+    }
+
+    h1 {
+        font-size: 28px;
+    }
+
+    form {
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+
+    label {
+        width: 100%;
+        max-width: 400px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        font-size: 14px;
+    }
+
+    input, button {
+        width: 100%;
+        max-width: 400px;
+    }
+
+    .chart-container {
+        width: 95%;
+        padding: 15px;
+    }
+}
+
+@media (max-width: 768px) {
+    @media (max-width: 480px) {
+    body::before,
+    body::after,
+    .rayo-centro {
+        width: 70vw;
+        height: 40vh;
+        opacity: 0.7; /* menos fuerte en pantallas chicas */
+    }
+    }
+
+
+    .rayo-centro {
+        width: 70vw;      /* antes: 500px */
+        max-width: 500px; /* sigue limitando en desktop */
+        height: 50vh;     /* antes: 400px */
+    }
+    h1 {
+        font-size: 24px;
+        margin-bottom: 15px;
+    }
+
+    form {
+        width: 100%;
+        gap: 8px;
+    }
+
+    label {
+        font-size: 13px;
+    }
+
+    .chart-container {
+        width: 100%;
+        max-width: 100%;
+        padding: 12px;
+    }
+
+    .temp-btn {
+        font-size: 14px;
+        padding: 12px 24px;
+    }
+}
+
+@media (max-width: 480px) {
+
+    @media (max-width: 480px) {
+    body::before,
+    body::after,
+    .rayo-centro {
+        width: 70vw;
+        height: 40vh;
+        opacity: 0.7; /* menos fuerte en pantallas chicas */
+    }
+    }
+
+
+    h1 {
+        font-size: 20px;
+    }
+
+    form {
+        gap: 6px;
+    }
+
+    label {
+        font-size: 12px;
+    }
+
+    input, button {
+        font-size: 12px;
+        padding: 8px;
+        border-radius: 8px;
+    }
+
+    .chart-container {
+        padding: 10px;
+        border-radius: 15px;
+    }
+
+    .temp-btn {
+        font-size: 12px;
+        padding: 10px 20px;
+        margin-top: 15px;
+    }
+
+    .message {
+        font-size: 16px;
+    }
+}

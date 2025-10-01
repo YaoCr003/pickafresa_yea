@@ -5,7 +5,8 @@ body {
     font-style: normal;
     background: #0d47a1;
     color: white;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .rain {
@@ -180,4 +181,113 @@ tr:hover {
 #loader.hidden {
     opacity: 0;
     visibility: hidden;
+}
+
+/* Responsive */
+@media (max-width: 1024px) { 
+    .container {
+        margin: 30px 20px;
+        padding: 15px;
+    }
+
+    form {
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+
+    input, button {
+        width: 100%;
+        max-width: 300px;
+    }
+
+    table {
+        font-size: 14px;
+    }
+
+    th, td {
+        padding: 10px;
+    }
+    
+    .back-btn {
+    position: fixed;   /* 👈 en vez de absolute */
+    top: 20px;
+    left: 20px;
+    background: linear-gradient(135deg, #4facfe, #00f2fe);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: bold;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    transition: transform 0.3s, box-shadow 0.3s;
+    z-index: 999; /* 👈 siempre por encima */
+}
+}
+
+@media (max-width: 768px) {
+    h1 {
+        font-size: 24px;
+    }
+
+    .back-btn {
+        padding: 8px 14px;
+        font-size: 14px;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        border-radius: 8px;
+    }
+
+    .back-btn {
+        position: fixed;   
+        top: 20px;
+        left: 20px;
+        background: linear-gradient(135deg, #4facfe, #00f2fe);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 50px;
+        text-decoration: none;
+        font-weight: bold;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        transition: transform 0.3s, box-shadow 0.3s;
+        z-index: 999; 
+    }
+
+}
+
+@media (max-width: 480px) { 
+    h1 {
+        font-size: 20px;
+    }
+
+    .container {
+        margin: 20px 10px;
+        padding: 12px;
+    }
+
+    form {
+        gap: 8px;
+    }
+
+    input, button {
+        width: 100%;
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+
+    th, td {
+        padding: 8px;
+        font-size: 12px;
+    }
+
+    .back-btn {
+        top: 10px;
+        left: 10px;
+        padding: 6px 10px;
+        font-size: 12px;
+    }
 }

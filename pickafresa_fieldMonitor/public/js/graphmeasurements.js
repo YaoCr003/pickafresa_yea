@@ -51,7 +51,8 @@ const data = {
 };
 
 const options = {
-    responsive: true,   
+    responsive: true,
+    maintainAspectRatio: false,   
     plugins: {
         legend: {
             position: "top",
