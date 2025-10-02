@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Alerts</title>
     <link rel="stylesheet" href="/css/alerts.css">
     <link rel="stylesheet" href="/css/main.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -53,22 +53,22 @@
                 </div>
 
                 <div class="field search">
-                    <label>Buscar</label>
-                    <input type="search" name="q" placeholder="buscar mensaje o tipo..." value="<%= filters.q %>">
+                    <label>Search</label>
+                    <input type="search" name="q" placeholder="search message or type..." value="<%= filters.q %>">
                 </div>
 
                 <div class="field">
-                    <label>Desde</label>
+                    <label>From</label>
                     <input type="date" name="start" id="startDate" value="<%= filters.start %>">
                 </div>
 
                 <div class="field">
-                    <label> Hasta </label>
+                    <label> To </label>
                     <input type="date" name="end" id="endDate" value="<%= filters.end %>">
                 </div>
 
                 <div class="field actions">
-                    <button type="submit" class="btn primary">Aplicar</button>
+                    <button type="submit" class="btn primary">Filter</button>
                     <button type="button" class="btn" id="resetBtn">Reset</button>
                 </div>
             </form>
@@ -76,7 +76,7 @@
 
         <section class="alerts-list">
             <% if (alerts.length === 0) { %>
-                <div class="empty">No se encontraron alertas. </div>
+                <div class="empty">No alerts found. </div>
             <% } %>
 
 
