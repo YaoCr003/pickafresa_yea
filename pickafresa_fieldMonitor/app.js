@@ -32,6 +32,8 @@ app.use(express.json());
 app.get("/", (req,res) => {
     const sqlMesuraments = "SELECT * FROM measurements ORDER BY date DESC LIMIT 1";
     const sqlPhotos = "SELECT * FROM images ORDER BY date DESC LIMIT 1";
+    const sqlAlerts = "SELECT type, level, message, date FROM alerts ORDER BY date DESC";
+    const sqlNewAlerts = "SELECT COUNT(*) AS total FROM alerts WHERE date >= NOW() - INTERVAL 1 DAY";
 
     db.query(sqlMesuraments, (errMed, measure) => {
 
@@ -47,34 +49,105 @@ app.get("/", (req,res) => {
                 return res.status(500).send("Error when consulting photos");
             }
 
-            // Convert images to base64
-            const processedPhotos = images.map(f => ({
-                ...f,
-                image: f.image ? Buffer.from(f.image).toString("base64") : null,
-                mime: f.mime || "image/jpeg"
-            }));
+            db.query(sqlAlerts, (errAlerts, alerts) => {
 
-            const lastMeasureDate = measure.length > 0
-                ? new Date(measure[0].date).toLocaleString("es-MX", {
-                    dateStyle: "short",
-                    timeStyle: "short"
-                })
-                : null;
+                if (errAlerts) {
+                    console.log("Error in alerts:", errAlerts);
+                    alerts = [];
+                }
 
-            const lastPhotoDate = processedPhotos.length > 0
-                ? new Date(processedPhotos[0].date).toLocaleString("es-MX", {
-                    dateStyle: "short",
-                    timeStyle: "short"
-                })
-                : null;
+                db.query(sqlNewAlerts, (errNew, rows) => {
+                    if (errNew) {
+                        console.log("Error counting new alerts:", errNew);
+                        rows = [{ total: 0 }];
+                    }
 
-            res.render("main", { 
-                measure, 
-                photos: processedPhotos,
-                lastMeasureDate,
-                lastPhotoDate 
+                    const newAlertsCount = rows[0].total;
+
+                    // Convert images to base64
+                    const processedPhotos = images.map(f => ({
+                        ...f,
+                        image: f.image ? Buffer.from(f.image).toString("base64") : null,
+                        mime: f.mime || "image/jpeg"
+                    }));
+
+                    const lastMeasureDate = measure.length > 0
+                        ? new Date(measure[0].date).toLocaleString("es-MX", {
+                            dateStyle: "short",
+                            timeStyle: "short"
+                        })
+                        : null;
+
+                    const lastPhotoDate = processedPhotos.length > 0
+                        ? new Date(processedPhotos[0].date).toLocaleString("es-MX", {
+                            dateStyle: "short",
+                            timeStyle: "short"
+                        })
+                        : null;
+
+                    res.render("main", { 
+                        measure, 
+                        photos: processedPhotos,
+                        lastMeasureDate,
+                        lastPhotoDate,
+                        alerts, 
+                        newAlertsCount
+                    });
+                }); 
             });
         });
+    });
+});
+
+// Alerts view
+app.get("/alerts", (req, res) => {
+    const { level, type, q, start, end } = req.query;
+    let sql = "SELECT * FROM alerts WHERE 1=1";
+    const params = [];
+
+    if (level) {
+        sql += " AND level = ?";
+        params.push(level);
+    }
+
+    if (type) {
+        sql += " AND type = ?";
+        params.push(type)
+    }
+
+    if (q) {
+        sql += " AND (message LIKE ? OR type LIKE ?)";
+        params.push(`%${q}%`, `%${q}%`);
+    }   
+
+    if (start && end) {
+        sql += " AND date BETWEEN ? AND ?";
+        params.push(`${start} 00:00:00`, `${end} 23:59:59`);
+    }
+
+    sql += " ORDER BY date DESC";
+
+    db.query("SELECT DISTINCT type FROM alerts", (errTypes, typesRows) => {
+        if (errTypes) {
+            console.error("Error fetching alert types:", errTypes);
+            return res.status(500).send("Error fetching alert types");
+        }
+
+        const types = typesRows.map(r => r.type);
+
+        db.query(sql, params, (err, results) => {
+            if (err) {
+                console.error("Error fetching alerts:", err);
+                return res.status(500).send("Error fetching alerts");
+            }
+
+            res.render("alerts", {
+                alerts: results,
+                filters: { level: level || "", type: type || "", q: q || "", start: start || "", end: end || "" },
+                types
+            })
+        });
+
     });
 });
 
@@ -141,8 +214,6 @@ app.get("/historical/temperature", (req, res) => {
             console.error("Error fetching temperature data: ", err)
             return res.status(500).send("Error feching data")
         }
-
-         console.log("Resultados query:", results);
 
         const labels = results.map(r =>
             new Date (r.date).toLocaleString("es-MX", {
@@ -222,8 +293,6 @@ app.get("/historical/light", (req,res) => {
             return res.status(500).send("Error feching data")
         }
 
-         console.log("Resultados query:", results);
-
         const labels = results.map(r =>
             new Date (r.date).toLocaleString("es-MX", {
                 dateStyle: "short",
@@ -278,6 +347,8 @@ app.get("/historical/images", (req, res) => {
         res.render("images", { photos: processedPhotos, start, end, message: null });
     });
 });
+
+//Alerts view
 
 // Iniciar app en el puerto 3000
 app.listen(PORT, "0.0.0.0", () => {

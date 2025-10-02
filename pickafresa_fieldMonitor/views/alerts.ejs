@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="/css/alerts.css">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+    <!-- Choices.js (select estilizado) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+
+    <!-- Flatpickr (calendario bonito) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+
+    <header>
+        <img src="/img/0-removebg-preview.png" alt="Logo">
+        <h1>System Alerts</h1>
+        <div class="buttons">
+            <button onclick="window.location.href='/'">Volver</button>
+        </div>
+    </header>
+
+    <main class="alerts-main">
+        <section class="filter-row">
+            <form id="filterForm" method="get" action="/alerts">
+                <div class="field">
+                    <label>Level</label>
+                    <select name="level" class="styled-select">
+                        <option value="">All</option>
+                        <option value="error" <%= filters.level === 'error' ? 'selected' : '' %>>Error</option>
+                        <option value="warning" <%= filters.level === 'warning' ? 'selected' : '' %>>Warning</option>
+                        <option value="info" <%= filters.level === 'info' ? 'selected' : '' %>>Info</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Type</label>
+                    <select name="type" class="styled-select">
+                        <option value="">All</option>
+                        <% types.forEach(t => { %>
+                            <option value="<%= t %>" <%= filters.type === t ? 'selected' : '' %>><%= t %></option>
+                        <% }) %>
+                    </select>
+                </div>
+
+                <div class="field search">
+                    <label>Buscar</label>
+                    <input type="search" name="q" placeholder="buscar mensaje o tipo..." value="<%= filters.q %>">
+                </div>
+
+                <div class="field">
+                    <label>Desde</label>
+                    <input type="date" name="start" id="startDate" value="<%= filters.start %>">
+                </div>
+
+                <div class="field">
+                    <label> Hasta </label>
+                    <input type="date" name="end" id="endDate" value="<%= filters.end %>">
+                </div>
+
+                <div class="field actions">
+                    <button type="submit" class="btn primary">Aplicar</button>
+                    <button type="button" class="btn" id="resetBtn">Reset</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="alerts-list">
+            <% if (alerts.length === 0) { %>
+                <div class="empty">No se encontraron alertas. </div>
+            <% } %>
+
+
+            <% alerts.forEach(a => { %>
+                <article class="alert-long-card <%= a.level %>">
+                    <div class="left">
+                        <div class="type"><%= a.type %></div>
+                        <div class="level"> <span class="badge <%= a.level %>"><%= a.level.toUpperCase() %></span></div>
+                    </div>
+
+                    <div class="middle">
+                        <div class="message"><%= a.message %></div>
+                    </div>  
+
+                    <div class="right">
+                        <div class="date"><%= new Date(a.date).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) %></div>
+                    </div>
+                </article>
+            <% }) %>
+        </section>
+
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            // Estilizar selects
+            document.querySelectorAll(".styled-select").forEach(el => {
+                new Choices(el, {
+                    searchPlaceholderValue: "Buscar...",
+                    noResultsText: "No hay resultados",
+                    itemSelectText: "Seleccionar",
+                    shouldSort: false
+                });
+            });
+
+            // Calendario
+            flatpickr("#startDate", {
+                dateFormat: "Y-m-d",
+                altInput: true,
+                altFormat: "d/m/Y",
+                locale: "es"
+            });
+
+            flatpickr("#endDate", {
+                dateFormat: "Y-m-d",
+                altInput: true,
+                altFormat: "d/m/Y",
+                locale: "es"
+            });
+
+            // Reset
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                window.location.href = '/alerts'
+            });
+        });
+
+        window.addEventListener("load", () => {
+            const loader = document.getElementById("loader");
+            loader.classList.add("hidden");
+        });
+
+        document.querySelectorAll("a, button").forEach(el => {
+            el.addEventListener("click", () => {
+                const loader = document.getElementById("loader");
+                loader.classList.remove("hidden");
+            });
+        });
+    </script>
+
+</body>
+</html>

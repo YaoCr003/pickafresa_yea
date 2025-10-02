@@ -24,6 +24,7 @@
         <img src="/img/0-removebg-preview.png" alt="Logo">
         <h1> Monitoring System 🍓 </h1>
          <div class="buttons">
+            <button onclick="window.location.href='/alerts'"> Alerts </button>
             <button onclick="window.location.href='/historical'"> Historical </button>
             <button onclick="window.location.href='/graphmeasurements'"> 24h </button>
         </div>
@@ -67,6 +68,7 @@
 
          </div>
 
+
         <!-- Image Container -->
         <div class="photo">
             <div class="photo-container">
@@ -109,6 +111,12 @@
             alerts.push("☀️Little light available!");
         <% } %>
 
+        const newAlertsCount = <%- newAlertsCount %>;
+
+        if (newAlertsCount > 0) {
+            alerts.push(`🔔 There are ${newAlertsCount} new alerts`);
+        }
+
         const container = document.getElementById("alertContainer");
 
         alerts.forEach(msg => {
@@ -118,7 +126,7 @@
             container.appendChild(div);
 
             // Remover alerta después de 4s
-            setTimeout(() => div.remove(), 4000);
+            setTimeout(() => div.remove(), 3000);
         });
     </script>
 
