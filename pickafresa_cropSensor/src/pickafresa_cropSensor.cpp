@@ -29,6 +29,9 @@ const int shs0Dry = 2430;       // Dry calibration value for sensor 0
 const int shs0Moist = 1660;     // Moist calibration value for sensor 0
 const int shs0Saturated = 1350; // Saturated calibration value for sensor 0
 const int shs0Water = 1090;     // Water calibration value for
+const int ldrNoLight = 300;
+const int ldrMidLight = 1500;
+const int ldrLight = 2500;
 
 // DHT Config
 DHT dht(DHTPIN, DHTTYPE);
