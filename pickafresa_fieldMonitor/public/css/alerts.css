@@ -23,7 +23,8 @@ body {
     border-radius: 1rem;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     margin-bottom: 1.5rem;
-    width: 50%;
+    width: 60%;
+    height: 80%;
 }
 
 .filters-grid {

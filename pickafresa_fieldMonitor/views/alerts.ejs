@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alerts</title>
+    <link rel="icon" type="image/png" href="/img/campana.png">
     <link rel="stylesheet" href="/css/alerts.css">
     <link rel="stylesheet" href="/css/main.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -36,9 +37,9 @@
                     <label>Level</label>
                     <select name="level" class="styled-select">
                         <option value="">All</option>
-                        <option value="error" <%= filters.level === 'error' ? 'selected' : '' %>>Error</option>
-                        <option value="warning" <%= filters.level === 'warning' ? 'selected' : '' %>>Warning</option>
-                        <option value="info" <%= filters.level === 'info' ? 'selected' : '' %>>Info</option>
+                        <option value="error" <%= (filters.level && filters.level.toLowerCase() === 'error') ? 'selected' : '' %>>Error</option>
+                        <option value="warning" <%= (filters.level && filters.level.toLowerCase() === 'warning') ? 'selected' : '' %>>Warning</option>
+                        <option value="info" <%= (filters.level && filters.level.toLowerCase() === 'info') ? 'selected' : '' %>>Info</option>
                     </select>
                 </div>
 
@@ -81,10 +82,10 @@
 
 
             <% alerts.forEach(a => { %>
-                <article class="alert-long-card <%= a.level %>">
+                <article class="alert-long-card <%= a.level.toLowerCase() %>">
                     <div class="left">
                         <div class="type"><%= a.type %></div>
-                        <div class="level"> <span class="badge <%= a.level %>"><%= a.level.toUpperCase() %></span></div>
+                        <div class="level"> <span class="badge <%= a.level.toLowerCase() %>"><%= a.level.toUpperCase() %></span></div>
                     </div>
 
                     <div class="middle">
