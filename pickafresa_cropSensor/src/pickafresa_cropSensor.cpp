@@ -310,7 +310,6 @@ void loop() {
   int substrateHumid0 = analogRead(shs0Pin);
   int substrateHumid1 = analogRead(shs1Pin);
   int substrateHumid2 = analogRead(shs2Pin);
-  int SubstrateHumid;
 
   // DHT Sensor Readings (Temperature and Humidity)
   float ambientHumid = dht.readHumidity();
@@ -337,7 +336,7 @@ void loop() {
 
   Serial.print("AH: "); Serial.print(ambientHumid); Serial.print("% | ");
   Serial.print("AT: "); Serial.print(ambientTemp); Serial.print("°C | ");
-  Serial.print("LT: "); Serial.print(lecturaLDR); Serial.print(" ("); Serial.print(voltajeLDR); Serial.println(" V) | ");
+  Serial.print("LT: "); Serial.print(lecturaLDR); Serial.print(" ("); Serial.print(voltajeLDR); Serial.println(" V)");
 
   
   // Light intensity calculation (in lux)
@@ -350,15 +349,6 @@ void loop() {
   // Show light intensity percentage on serial monitor
   Serial.print("LT%: "); Serial.print(lightPerc); Serial.print("%");
 
-  unsigned long currentTime = millis();
-
-  // Record sensor data every RECORDING_INTERVAL (60 seconds)
-  if (currentTime - lastSensorRead >= RECORDING_INTERVAL) {
-    recordSensorData();
-    lastSensorRead = currentTime;
-  }
-
-  // Verify MQTT connection and keep alive
   if (!client.connected()) {
     mqtt_reconnect();
   }
@@ -368,22 +358,6 @@ void loop() {
   if (now - lastMsg >= 30000) {   // every ~7 s
     lastMsg = now;
 
-    char msgTemp[16];
-    char msgHum[16];
-    char msgLight[16];
-    char msgSubs[16];
-
-    dtostrf(ambientTemp, 4, 2, msgTemp);
-    dtostrf(ambientHumid, 4, 2, msgHum);
-    dtostrf(lightPerc, 4, 2, msgLight);
-    dtostrf(SubstrateHumid, 4, 2, msgSubs);
-
-    // Publicar a cada tópico MQTT
-    client.publish(PUB_TEMP, msgTemp);   // sensor/temperatura
-    client.publish(PUB_AMB, msgHum);     // sensor/ambienteH
-    client.publish(PUB_LIGHT, msgLight); // sensor/light
-    client.publish(PUB_SUBS, msgSubs);   // sensor/substrateM
-
   delay(1000);
   }
 
@@ -392,31 +366,4 @@ void loop() {
 void stopwatchReset() {
   // Reset stopwatch timer
 
-  // Optional: Still show real-time readings for debugging (less frequent)
-  if (currentTime - lastMsg >= 10000) { // Every 10 seconds
-    lastMsg = currentTime;
-    
-    // Quick real-time readings for debug
-    int substrateHumid0 = analogRead(shs0Pin);
-    int substrateHumid1 = analogRead(shs1Pin);
-    int substrateHumid2 = analogRead(shs2Pin);
-    float ambientHumid = dht.readHumidity();
-    float ambientTemp = dht.readTemperature();
-    int lecturaLDR = analogRead(ldrPin);
-
-    int substrateHumid0Perc = constrain(map(substrateHumid0, shs0Air, shs0Water, 0, 100), 0, 100);
-    int substrateHumid1Perc = constrain(map(substrateHumid1, shs0Air, shs0Water, 0, 100), 0, 100);
-    int substrateHumid2Perc = constrain(map(substrateHumid2, shs0Air, shs0Water, 0, 100), 0, 100);
-    int lightPerc = constrain(map(lecturaLDR, ldrNoLight, ldrLight, 0, 100), 0, 100);
-
-    Serial.print("Real-time - SH: ");
-    Serial.print(substrateHumid0Perc); Serial.print(", ");
-    Serial.print(substrateHumid1Perc); Serial.print(", ");
-    Serial.print(substrateHumid2Perc); Serial.print("% | ");
-    Serial.print("T: "); Serial.print(ambientTemp); Serial.print("°C | ");
-    Serial.print("H: "); Serial.print(ambientHumid); Serial.print("% | ");
-    Serial.print("L: "); Serial.print(lightPerc); Serial.println("%");
-  }
-
-  delay(100); // Small delay to prevent overwhelming the system
 }
