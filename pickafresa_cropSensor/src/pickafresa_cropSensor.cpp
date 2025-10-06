@@ -135,6 +135,7 @@ void loop() {
   int substrateHumid0 = analogRead(shs0Pin);
   int substrateHumid1 = analogRead(shs1Pin);
   int substrateHumid2 = analogRead(shs2Pin);
+  int SubstrateHumid;
 
   // DHT Sensor Readings (Temperature and Humidity)
   float ambientHumid = dht.readHumidity();
@@ -159,9 +160,12 @@ void loop() {
   Serial.print("SH 1: "); Serial.print(substrateHumid1); Serial.print(" ("); Serial.print(substrateHumid1Perc); Serial.print("%) | ");
   Serial.print("SH 2: "); Serial.print(substrateHumid2); Serial.print(" ("); Serial.print(substrateHumid2Perc); Serial.print("%) | ");
 
+  SubstrateHumid = (substrateHumid0Perc + substrateHumid1Perc + substrateHumid2Perc)/3;
+  Serial.print("SH Prom: "); Serial.print(SubstrateHumid); Serial.print("% | ");
+
   Serial.print("AH: "); Serial.print(ambientHumid); Serial.print("% | ");
   Serial.print("AT: "); Serial.print(ambientTemp); Serial.print("°C | ");
-  Serial.print("LT: "); Serial.print(lecturaLDR); Serial.print(" ("); Serial.print(voltajeLDR); Serial.println(" V)");
+  Serial.print("LT: "); Serial.print(lecturaLDR); Serial.print(" ("); Serial.print(voltajeLDR); Serial.println(" V) | ");
 
   
   // Light intensity calculation (in lux)
@@ -182,6 +186,22 @@ void loop() {
   unsigned long now = millis();
   if (now - lastMsg >= 30000) {   // every ~7 s
     lastMsg = now;
+
+    char msgTemp[16];
+    char msgHum[16];
+    char msgLight[16];
+    char msgSubs[16];
+
+    dtostrf(ambientTemp, 4, 2, msgTemp);
+    dtostrf(ambientHumid, 4, 2, msgHum);
+    dtostrf(lightPerc, 4, 2, msgLight);
+    dtostrf(SubstrateHumid, 4, 2, msgSubs);
+
+    // Publicar a cada tópico MQTT
+    client.publish(PUB_TEMP, msgTemp);   // sensor/temperatura
+    client.publish(PUB_AMB, msgHum);     // sensor/ambienteH
+    client.publish(PUB_LIGHT, msgLight); // sensor/light
+    client.publish(PUB_SUBS, msgSubs);   // sensor/substrateM
 
   delay(1000);
   }
