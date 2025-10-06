@@ -13,6 +13,24 @@
 
 #define LED_BUILTIN 2   // Pin for built-in LED
 
+//MQTT Configuration
+const char* mqtt_server = "10.25.12.61";
+const int mqtt_port = 1883;
+const char* mqtt_user = "yeaberry";
+const char* mqtt_pass = "yeaberry";
+
+//MQTT Topics
+#define PUB_TEMP "sensor/temperatura"
+#define PUB_AMB "sensor/ambienteH"
+#define PUB_SUBS "sensor/substrateM"
+#define PUB_LIGHT "sensor/light"
+
+#define PUB_ALERT "alerts"
+
+#define SUB_DATA "request/data"
+#define PUB_DATA "request/data"
+
+
 // Pin Definitions
 const int shs0Pin = 32; // Pin for substrate humidity sensor 0
 const int shs1Pin = 33;  // Pin for substrate humidity sensor 1
@@ -29,9 +47,9 @@ const int shs0Dry = 2430;       // Dry calibration value for sensor 0
 const int shs0Moist = 1660;     // Moist calibration value for sensor 0
 const int shs0Saturated = 1350; // Saturated calibration value for sensor 0
 const int shs0Water = 1090;     // Water calibration value for
-const int ldrNoLight = 300;
+const int ldrNoLight = 100;
 const int ldrMidLight = 1500;
-const int ldrLight = 2500;
+const int ldrLight = 3000;
 
 // DHT Config
 DHT dht(DHTPIN, DHTTYPE);
@@ -48,6 +66,10 @@ void ledFlash(byte times, int delayTime) {
 void sensorCalib() {
   return;
 }
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+unsigned long lastMsg = 0;
 
 void setup() {
   // Serial for debugging
@@ -86,11 +108,27 @@ void setup() {
 
   // Sensor calibration
   sensorCalib();
+  
+  //Establish connection to MQTT broker
+  client.setServer(mqtt_server, mqtt_port);
+  reconnect();
 
   Serial.println("Pickafresa Crop Sensor Initialized");
   
 }
 
+//MQTT Reconnect
+void reconnect() {
+  while (!client.connected()) {
+    if (client.connect("ESP32Client", mqtt_user, mqtt_pass)) { //mqtt_user, mqtt_pass
+      Serial.println("connected!");
+      client.subscribe(SUB_DATA);
+    } else {
+      delay(2000);
+    }
+    yield();
+  }
+}
 
 void loop() {
   // Raw substate sensor readings
@@ -129,10 +167,24 @@ void loop() {
   // Light intensity calculation (in lux)
 
   // Light intensity calculation in percetage
+  int lightPerc = map(lecturaLDR, ldrNoLight, ldrLight, 0, 100);
+  lightPerc = constrain(lightPerc, 0, 100);
 
-  // 
+
+  // Show light intensity percentage on serial monitor
+  Serial.print("LT%: "); Serial.print(lightPerc); Serial.print("%");
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  unsigned long now = millis();
+  if (now - lastMsg >= 30000) {   // every ~7 s
+    lastMsg = now;
 
   delay(1000);
+  }
 
 }
 
