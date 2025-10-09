@@ -1,6 +1,6 @@
 // ================
 // YEA Pickafresa System Crop Sensor Firmware
-// Version: Beta v1.3
+// Version: Beta v1.3.1
 
 // Developed by: Team YEA
 // @YaoCr003
@@ -12,7 +12,7 @@
 // Tested and calibrated for:
 // Hardware: ESP32 (ESP32-DOIT DevKit V1), DHT22, 3x Capacitive Soil Moisture Sensors v1.2, 10k LDR
 //
-// Firmware features: (Beta v1.3)
+// Firmware features: (Beta v1.3.1)
 // - Reads temperature and humidity from DHT22
 // - Reads substrate moisture from 3 capacitive soil moisture sensors
 // - Reads ambient light level from LDR
@@ -129,7 +129,9 @@ void publishAlert(const char* level, const char* type, const char* message) {
   char alertMsg[128];
   snprintf(alertMsg, sizeof(alertMsg), "%s|%s|%s", level, type, message);
   client.publish(PUB_ALERT, alertMsg);
-  client.publish(PUB_DEBUG_STREAM, alertMsg); // Always forward to debug stream
+  if (debugStreamActive) {
+    client.publish(PUB_DEBUG_STREAM, alertMsg);
+  }
   Serial.print("ALERT published: ");
   Serial.println(alertMsg);
   ledFlash(3, 500, 100);
@@ -212,7 +214,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
     Serial.print("SUB_REQ received: ");
     Serial.println(reqTimestamp);
+    if (debugStreamActive) {
+      char ackMsg[64];
+      snprintf(ackMsg, sizeof(ackMsg), "SUB_REQ received: %s", reqTimestamp);
+      client.publish(PUB_DEBUG_STREAM, ackMsg);
+    }
 
+    // Publish filtered data (debug info will be sent only if debugStreamActive)
     publishFilteredData();
   } else if (strcmp(topic, SUB_DEBUG) == 0) {
     char msg[16];
@@ -228,9 +236,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       client.publish(PUB_DEBUG_STREAM, startMsg);
       Serial.println(startMsg);
     } else if ((strcmp(msg, "stop") == 0 || strcmp(msg, "close") == 0) && debugStreamActive) {
-      debugStreamActive = false;
+      // Publish closed message while still active, then deactivate
       client.publish(PUB_DEBUG_STREAM, "Debug Stream closed.");
       Serial.println("Debug Stream closed.");
+      debugStreamActive = false;
     }
   }
 }
@@ -282,6 +291,13 @@ void recordSensorData() {
   Serial.print(avgSubstrate);
   Serial.print(", L=");
   Serial.println(lightPerc);
+  if (debugStreamActive) {
+    char recordedMsg[160];
+    snprintf(recordedMsg, sizeof(recordedMsg),
+             "Recorded data [index %d, count %d]: T=%.2f, H=%.2f, S=%.1f, L=%d",
+             bufferIndex, bufferCount, safeTemp, safeHumid, avgSubstrate, lightPerc);
+    client.publish(PUB_DEBUG_STREAM, recordedMsg);
+  }
 }
 
 // Filter outliers using IQR method and return average of remaining values
@@ -339,12 +355,18 @@ void clearBuffers() {
   bufferIndex = 0;
   bufferCount = 0;
   Serial.println("DATA BUFFERS CLEARED");
+  if (debugStreamActive) {
+    client.publish(PUB_DEBUG_STREAM, "DATA BUFFERS CLEARED");
+  }
 }
 
 // Publish filtered and averaged sensor data
 void publishFilteredData() {
   if (bufferCount == 0) {
     Serial.println("NO DATA AVAILABLE: PUBLISH NONE");
+    if (debugStreamActive) {
+      client.publish(PUB_DEBUG_STREAM, "NO DATA AVAILABLE: PUBLISH NONE");
+    }
     return;
   }
 
@@ -365,6 +387,19 @@ void publishFilteredData() {
   client.publish(PUB_AMBIH, humidStr);
   client.publish(PUB_SUBSH, substrateStr);
   client.publish(PUB_LIGHT, lightStr);
+
+  // Concise published summary (mirror on Serial and debug stream when active)
+  {
+    String publishedInfo = "Published averages - T:" + String(avgTemp,2) +
+                           ", H:" + String(avgHumid,2) +
+                           ", S:" + String(avgSubstrate,1) +
+                           ", L:" + String(avgLight,1) +
+                           " (" + String(bufferCount) + " samples)";
+    Serial.println(publishedInfo);
+    if (debugStreamActive) {
+      client.publish(PUB_DEBUG_STREAM, publishedInfo.c_str());
+    }
+  }
 
   // Print/publish buffer contents for debug
   String debugInfo = "Averages - T:" + String(avgTemp,2) + ", H:" + String(avgHumid,2) + ", S:" + String(avgSubstrate,1) + ", L:" + String(avgLight,1) + " (" + String(bufferCount) + " samples)\n";
