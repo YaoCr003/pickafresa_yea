@@ -1,3 +1,31 @@
+// ================
+// YEA Pickafresa System Crop Sensor Firmware
+// Version: Beta v1.2
+
+// Developed by: Team YEA
+// @YaoCr003
+// @a01705488-rgb
+// @aldrick-t
+// 
+// Developed for: Pickafresa Project
+// 
+// Tested and calibrated for:
+// Hardware: ESP32 (ESP32-DOIT DevKit V1), DHT22, 3x Capacitive Soil Moisture Sensors v1.2, 10k LDR
+//
+// Firmware features: (Beta v1.2)
+// - Reads temperature and humidity from DHT22
+// - Reads substrate moisture from 3 capacitive soil moisture sensors
+// - Reads ambient light level from LDR
+// - Connects to WiFi and MQTT broker
+// - Publishes sensor data to MQTT topics
+// - Subscribes to MQTT topic for data requests
+// - Buffers data and applies outlier filtering before publishing
+// - Alerts via MQTT on sensor errors
+// 
+// AUGUST 2025 - DECEMBER 2025
+// ================
+
+
 #include <Arduino.h>
 #include <DHT.h>
 #include <PubSubClient.h>
@@ -85,6 +113,30 @@ void sensorCalib() {
   return;
 }
 
+// Publish alert message in format "level|type|message"
+void publishAlert(const char* level, const char* type, const char* message) {
+  char alertMsg[128];
+  snprintf(alertMsg, sizeof(alertMsg), "%s|%s|%s", level, type, message);
+  client.publish(PUB_ALERT, alertMsg);
+  Serial.print("ALERT published: ");
+  Serial.println(alertMsg);
+}
+
+// MQTT callback function
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (strcmp(topic, SUB_REQ) == 0) {
+    char reqTimestamp[24];
+    unsigned int n = (length < sizeof(reqTimestamp) - 1) ? length : (sizeof(reqTimestamp) - 1);
+    memcpy(reqTimestamp, payload, n);
+    reqTimestamp[n] = '\0';
+
+    Serial.print("SUB_REQ received: ");
+    Serial.println(reqTimestamp);
+
+    publishFilteredData();
+  }
+}
+
 // Record current sensor readings into circular buffers
 void recordSensorData() {
   // Read raw sensors
@@ -95,18 +147,43 @@ void recordSensorData() {
   float ambientTemp = dht.readTemperature();
   int lecturaLDR = analogRead(ldrPin);
 
-  // Convert to percentages
-  int substrateHumid0Perc = constrain(map(substrateHumid0, shs0Air, shs0Water, 0, 100), 0, 100);
-  int substrateHumid1Perc = constrain(map(substrateHumid1, shs0Air, shs0Water, 0, 100), 0, 100);
-  int substrateHumid2Perc = constrain(map(substrateHumid2, shs0Air, shs0Water, 0, 100), 0, 100);
-  int lightPerc = constrain(map(lecturaLDR, ldrNoLight, ldrLight, 0, 100), 0, 100);
+  // Sensor error detection
+  bool sensorError = false;
+  // ADC returns -1 or 4095 (max) for disconnected sensors on ESP32
+  if (substrateHumid0 < 1000 || substrateHumid1 < 1000 || substrateHumid2 < 1000 ||
+      isnan(ambientHumid) || isnan(ambientTemp) ||
+      lecturaLDR <= 0 || lecturaLDR >= 4095) {
+    sensorError = true;
+  }
 
-  // Average the 3 substrate sensors
-  float avgSubstrate = (substrateHumid0Perc + substrateHumid1Perc + substrateHumid2Perc) / 3.0;
+  int substrateHumid0Perc = 0, substrateHumid1Perc = 0, substrateHumid2Perc = 0, lightPerc = 0;
+  float avgSubstrate = 0.0;
+  float safeTemp = 0.0, safeHumid = 0.0;
+
+  if (sensorError) {
+    // Set all readings to zero
+    substrateHumid0Perc = 0;
+    substrateHumid1Perc = 0;
+    substrateHumid2Perc = 0;
+    avgSubstrate = 0.0;
+    lightPerc = 0;
+    safeTemp = 0.0;
+    safeHumid = 0.0;
+    publishAlert("error", "SENSOR", "One or more sensors disconnected or invalid");
+  } else {
+    // Convert to percentages
+    substrateHumid0Perc = constrain(map(substrateHumid0, shs0Air, shs0Water, 0, 100), 0, 100);
+    substrateHumid1Perc = constrain(map(substrateHumid1, shs0Air, shs0Water, 0, 100), 0, 100);
+    substrateHumid2Perc = constrain(map(substrateHumid2, shs0Air, shs0Water, 0, 100), 0, 100);
+    avgSubstrate = (substrateHumid0Perc + substrateHumid1Perc + substrateHumid2Perc) / 3.0;
+    lightPerc = constrain(map(lecturaLDR, ldrNoLight, ldrLight, 0, 100), 0, 100);
+    safeTemp = ambientTemp;
+    safeHumid = ambientHumid;
+  }
 
   // Store in circular buffers
-  tempBuffer[bufferIndex] = ambientTemp;
-  humidBuffer[bufferIndex] = ambientHumid;
+  tempBuffer[bufferIndex] = safeTemp;
+  humidBuffer[bufferIndex] = safeHumid;
   substrateBuffer[bufferIndex] = avgSubstrate;
   lightBuffer[bufferIndex] = lightPerc;
 
@@ -121,9 +198,9 @@ void recordSensorData() {
   Serial.print(", count ");
   Serial.print(bufferCount);
   Serial.print("]: T=");
-  Serial.print(ambientTemp);
+  Serial.print(safeTemp);
   Serial.print(", H=");
-  Serial.print(ambientHumid);
+  Serial.print(safeHumid);
   Serial.print(", S=");
   Serial.print(avgSubstrate);
   Serial.print(", L=");
@@ -184,13 +261,13 @@ float filterOutliersAndAverage(float* buffer, int count) {
 void clearBuffers() {
   bufferIndex = 0;
   bufferCount = 0;
-  Serial.println("Data buffers cleared - starting fresh data collection");
+  Serial.println("DATA BUFFERS CLEARED");
 }
 
 // Publish filtered and averaged sensor data
 void publishFilteredData() {
   if (bufferCount == 0) {
-    Serial.println("No data to publish");
+    Serial.println("NO DATA AVAILABLE: PUBLISH NONE");
     return;
   }
 
@@ -228,26 +305,13 @@ void publishFilteredData() {
   clearBuffers();
 }
 
-// MQTT callback function
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  if (strcmp(topic, SUB_REQ) == 0) {
-    char reqTimestamp[24];
-    unsigned int n = (length < sizeof(reqTimestamp) - 1) ? length : (sizeof(reqTimestamp) - 1);
-    memcpy(reqTimestamp, payload, n);
-    reqTimestamp[n] = '\0';
 
-    Serial.print("SUB_REQ received: ");
-    Serial.println(reqTimestamp);
-
-    publishFilteredData();
-  }
-}
 
 //MQTT Reconnect
 void mqtt_reconnect() {
   while (!client.connected()) {
     if (client.connect("ESP32Client", MQTT_USER, MQTT_PASS)) { //mqtt_user, mqtt_pass
-      Serial.println("connected!");
+      Serial.println("MQTT connected!");
       client.subscribe(SUB_REQ);
     } else {
       delay(2000);
@@ -327,6 +391,7 @@ void loop() {
     // Quick real-time readings for debug
     int substrateHumid0 = analogRead(shs0Pin);
     int substrateHumid1 = analogRead(shs1Pin);
+    Serial.print("Substrate: "); Serial.println(substrateHumid1);
     int substrateHumid2 = analogRead(shs2Pin);
     float ambientHumid = dht.readHumidity();
     float ambientTemp = dht.readTemperature();
@@ -345,6 +410,7 @@ void loop() {
     Serial.print("H: "); Serial.print(ambientHumid); Serial.print("% | ");
     Serial.print("L: "); Serial.print(lightPerc); Serial.println("%");
   }
+  
 
   delay(100); // Small delay to prevent overwhelming the system
 }
