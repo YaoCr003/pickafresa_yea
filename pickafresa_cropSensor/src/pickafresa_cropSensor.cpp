@@ -1,3 +1,32 @@
+// ================
+// YEA Pickafresa System Crop Sensor Firmware
+// Version: Beta v1.3.1
+
+// Developed by: Team YEA
+// @YaoCr003
+// @a01705488-rgb
+// @aldrick-t
+// 
+// Developed for: Pickafresa Project
+// 
+// Tested and calibrated for:
+// Hardware: ESP32 (ESP32-DOIT DevKit V1), DHT22, 3x Capacitive Soil Moisture Sensors v1.2, 10k LDR
+//
+// Firmware features: (Beta v1.3.1)
+// - Reads temperature and humidity from DHT22
+// - Reads substrate moisture from 3 capacitive soil moisture sensors
+// - Reads ambient light level from LDR
+// - Connects to WiFi and MQTT broker
+// - Publishes sensor data to MQTT topics
+// - Subscribes to MQTT topic for data requests
+// - Buffers data and applies outlier filtering before publishing
+// - Alerts via MQTT on sensor errors
+// - Debug stream via MQTT & serial console
+// 
+// AUGUST 2025 - DECEMBER 2025
+// ================
+
+
 #include <Arduino.h>
 #include <DHT.h>
 #include <PubSubClient.h>
@@ -23,6 +52,9 @@
 
 #define SUB_REQ "request/data"
 
+#define SUB_DEBUG "debug"
+#define PUB_DEBUG_STREAM "debug_stream"
+
 // Pin Definitions
 const int shs0Pin = 32; // Pin for substrate humidity sensor 0
 const int shs1Pin = 33;  // Pin for substrate humidity sensor 1
@@ -45,7 +77,7 @@ const int ldrLight = 3000;  // Full light calibration value for LDR (Flashlight 
 
 // Data storage configuration
 const int DATA_BUFFER_SIZE = 50;  // Store last 50 readings (50 minutes at 60s intervals)
-const unsigned long RECORDING_INTERVAL = 60000; // 60 seconds in milliseconds
+const unsigned long RECORDING_INTERVAL = 10000; // 60 seconds in milliseconds
 
 // Circular buffers for sensor data
 float tempBuffer[DATA_BUFFER_SIZE];
@@ -64,25 +96,152 @@ PubSubClient client(espClient);
 unsigned long lastMsg = 0;
 unsigned long lastSensorRead = 0;
 
+// Debug stream state
+bool debugStreamActive = false;
+
 // Function declarations
 void recordSensorData();
+bool checkSensorErrors(int substrateHumid0, int substrateHumid1, int substrateHumid2, 
+                      float ambientTemp, float ambientHumid, int lecturaLDR,
+                      int& substrateHumid0Perc, int& substrateHumid1Perc, int& substrateHumid2Perc,
+                      int& lightPerc, float& safeTemp, float& safeHumid);
 float filterOutliersAndAverage(float* buffer, int count);
 void publishFilteredData();
 void clearBuffers();
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 
 // BUILTIN LED Basic Flash function
-void ledFlash(byte times, int delayTime) {
+void ledFlash(byte times, int onTime, int offTime) {
   for (byte i = 0; i < times; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
-    delay(delayTime);
+    delay(onTime);
     digitalWrite(LED_BUILTIN, LOW);
-    delay(delayTime);
+    delay(offTime);
   }
 }
 
 void sensorCalib() {
   return;
+}
+
+// Publish alert message in format "level|type|message"
+void publishAlert(const char* level, const char* type, const char* message) {
+  char alertMsg[128];
+  snprintf(alertMsg, sizeof(alertMsg), "%s|%s|%s", level, type, message);
+  client.publish(PUB_ALERT, alertMsg);
+  if (debugStreamActive) {
+    client.publish(PUB_DEBUG_STREAM, alertMsg);
+  }
+  Serial.print("ALERT published: ");
+  Serial.println(alertMsg);
+  ledFlash(3, 500, 100);
+}
+
+// Check sensor errors and convert raw readings to percentages
+// Returns true if any sensor error is detected, false otherwise
+// Modifies the percentage and safe value parameters by reference
+bool checkSensorErrors(int substrateHumid0, int substrateHumid1, int substrateHumid2, 
+                      float ambientTemp, float ambientHumid, int lecturaLDR,
+                      int& substrateHumid0Perc, int& substrateHumid1Perc, int& substrateHumid2Perc,
+                      int& lightPerc, float& safeTemp, float& safeHumid) {
+  bool sensorError = false;
+  
+  // Initialize output parameters
+  substrateHumid0Perc = 0;
+  substrateHumid1Perc = 0;
+  substrateHumid2Perc = 0;
+  lightPerc = 0;
+  safeTemp = 0.0;
+  safeHumid = 0.0;
+
+  // Check substrate sensor 0
+  if (substrateHumid0 < 1000 || substrateHumid0 > 3000) {
+    substrateHumid0Perc = 0;
+    sensorError = true;
+    publishAlert("error", "SENSOR", "Substrate sensor 0 disconnected or invalid");
+  } else {
+    substrateHumid0Perc = constrain(map(substrateHumid0, shs0Air, shs0Water, 0, 100), 0, 100);
+  }
+
+  // Check substrate sensor 1
+  if (substrateHumid1 < 1000 || substrateHumid1 > 3000) {
+    substrateHumid1Perc = 0;
+    sensorError = true;
+    publishAlert("error", "SENSOR", "Substrate sensor 1 disconnected or invalid");
+  } else {
+    substrateHumid1Perc = constrain(map(substrateHumid1, shs0Air, shs0Water, 0, 100), 0, 100);
+  }
+
+  // Check substrate sensor 2
+  if (substrateHumid2 < 1000 || substrateHumid2 > 3000) {
+    substrateHumid2Perc = 0;
+    sensorError = true;
+    publishAlert("error", "SENSOR", "Substrate sensor 2 disconnected or invalid");
+  } else {
+    substrateHumid2Perc = constrain(map(substrateHumid2, shs0Air, shs0Water, 0, 100), 0, 100);
+  }
+
+  // Check DHT22 sensor
+  if (isnan(ambientHumid) || isnan(ambientTemp)) {
+    safeTemp = 0.0;
+    safeHumid = 0.0;
+    sensorError = true;
+    publishAlert("error", "SENSOR", "DHT22 sensor disconnected or invalid");
+  } else {
+    safeTemp = ambientTemp;
+    safeHumid = ambientHumid;
+  }
+
+  // Check LDR sensor
+  if (lecturaLDR <= 0 || lecturaLDR >= 4095) {
+    lightPerc = 0;
+    sensorError = true;
+    publishAlert("error", "SENSOR", "LDR sensor disconnected or invalid");
+  } else {
+    lightPerc = constrain(map(lecturaLDR, ldrNoLight, ldrLight, 0, 100), 0, 100);
+  }
+
+  return sensorError;
+}
+
+// MQTT callback function
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (strcmp(topic, SUB_REQ) == 0) {
+    char reqTimestamp[24];
+    unsigned int n = (length < sizeof(reqTimestamp) - 1) ? length : (sizeof(reqTimestamp) - 1);
+    memcpy(reqTimestamp, payload, n);
+    reqTimestamp[n] = '\0';
+
+    Serial.print("SUB_REQ received: ");
+    Serial.println(reqTimestamp);
+    if (debugStreamActive) {
+      char ackMsg[64];
+      snprintf(ackMsg, sizeof(ackMsg), "SUB_REQ received: %s", reqTimestamp);
+      client.publish(PUB_DEBUG_STREAM, ackMsg);
+    }
+
+    // Publish filtered data (debug info will be sent only if debugStreamActive)
+    publishFilteredData();
+  } else if (strcmp(topic, SUB_DEBUG) == 0) {
+    char msg[16];
+    unsigned int n = (length < sizeof(msg) - 1) ? length : (sizeof(msg) - 1);
+    memcpy(msg, payload, n);
+    msg[n] = '\0';
+    Serial.print("DEBUG topic received: ");
+    Serial.println(msg);
+    if (strcmp(msg, "debug") == 0 && !debugStreamActive) {
+      debugStreamActive = true;
+      char startMsg[64];
+      snprintf(startMsg, sizeof(startMsg), "Start Debug Stream on from %s IP", WiFi.localIP().toString().c_str());
+      client.publish(PUB_DEBUG_STREAM, startMsg);
+      Serial.println(startMsg);
+    } else if ((strcmp(msg, "stop") == 0 || strcmp(msg, "close") == 0) && debugStreamActive) {
+      // Publish closed message while still active, then deactivate
+      client.publish(PUB_DEBUG_STREAM, "Debug Stream closed.");
+      Serial.println("Debug Stream closed.");
+      debugStreamActive = false;
+    }
+  }
 }
 
 // Record current sensor readings into circular buffers
@@ -95,18 +254,22 @@ void recordSensorData() {
   float ambientTemp = dht.readTemperature();
   int lecturaLDR = analogRead(ldrPin);
 
-  // Convert to percentages
-  int substrateHumid0Perc = constrain(map(substrateHumid0, shs0Air, shs0Water, 0, 100), 0, 100);
-  int substrateHumid1Perc = constrain(map(substrateHumid1, shs0Air, shs0Water, 0, 100), 0, 100);
-  int substrateHumid2Perc = constrain(map(substrateHumid2, shs0Air, shs0Water, 0, 100), 0, 100);
-  int lightPerc = constrain(map(lecturaLDR, ldrNoLight, ldrLight, 0, 100), 0, 100);
+  // Variables for processed sensor data
+  int substrateHumid0Perc, substrateHumid1Perc, substrateHumid2Perc, lightPerc;
+  float safeTemp, safeHumid;
 
-  // Average the 3 substrate sensors
+  // Check sensor errors and get processed values
+  bool sensorError = checkSensorErrors(substrateHumid0, substrateHumid1, substrateHumid2,
+                                      ambientTemp, ambientHumid, lecturaLDR,
+                                      substrateHumid0Perc, substrateHumid1Perc, substrateHumid2Perc,
+                                      lightPerc, safeTemp, safeHumid);
+
+  // Calculate average substrate moisture from valid sensors
   float avgSubstrate = (substrateHumid0Perc + substrateHumid1Perc + substrateHumid2Perc) / 3.0;
 
   // Store in circular buffers
-  tempBuffer[bufferIndex] = ambientTemp;
-  humidBuffer[bufferIndex] = ambientHumid;
+  tempBuffer[bufferIndex] = safeTemp;
+  humidBuffer[bufferIndex] = safeHumid;
   substrateBuffer[bufferIndex] = avgSubstrate;
   lightBuffer[bufferIndex] = lightPerc;
 
@@ -121,13 +284,20 @@ void recordSensorData() {
   Serial.print(", count ");
   Serial.print(bufferCount);
   Serial.print("]: T=");
-  Serial.print(ambientTemp);
+  Serial.print(safeTemp);
   Serial.print(", H=");
-  Serial.print(ambientHumid);
+  Serial.print(safeHumid);
   Serial.print(", S=");
   Serial.print(avgSubstrate);
   Serial.print(", L=");
   Serial.println(lightPerc);
+  if (debugStreamActive) {
+    char recordedMsg[160];
+    snprintf(recordedMsg, sizeof(recordedMsg),
+             "Recorded data [index %d, count %d]: T=%.2f, H=%.2f, S=%.1f, L=%d",
+             bufferIndex, bufferCount, safeTemp, safeHumid, avgSubstrate, lightPerc);
+    client.publish(PUB_DEBUG_STREAM, recordedMsg);
+  }
 }
 
 // Filter outliers using IQR method and return average of remaining values
@@ -184,13 +354,19 @@ float filterOutliersAndAverage(float* buffer, int count) {
 void clearBuffers() {
   bufferIndex = 0;
   bufferCount = 0;
-  Serial.println("Data buffers cleared - starting fresh data collection");
+  Serial.println("DATA BUFFERS CLEARED");
+  if (debugStreamActive) {
+    client.publish(PUB_DEBUG_STREAM, "DATA BUFFERS CLEARED");
+  }
 }
 
 // Publish filtered and averaged sensor data
 void publishFilteredData() {
   if (bufferCount == 0) {
-    Serial.println("No data to publish");
+    Serial.println("NO DATA AVAILABLE: PUBLISH NONE");
+    if (debugStreamActive) {
+      client.publish(PUB_DEBUG_STREAM, "NO DATA AVAILABLE: PUBLISH NONE");
+    }
     return;
   }
 
@@ -212,43 +388,51 @@ void publishFilteredData() {
   client.publish(PUB_SUBSH, substrateStr);
   client.publish(PUB_LIGHT, lightStr);
 
-  Serial.print("Published filtered averages - T:");
-  Serial.print(avgTemp);
-  Serial.print(", H:");
-  Serial.print(avgHumid);
-  Serial.print(", S:");
-  Serial.print(avgSubstrate);
-  Serial.print(", L:");
-  Serial.print(avgLight);
-  Serial.print(" (from ");
-  Serial.print(bufferCount);
-  Serial.println(" samples)");
-  
+  // Concise published summary (mirror on Serial and debug stream when active)
+  {
+    String publishedInfo = "Published averages - T:" + String(avgTemp,2) +
+                           ", H:" + String(avgHumid,2) +
+                           ", S:" + String(avgSubstrate,1) +
+                           ", L:" + String(avgLight,1) +
+                           " (" + String(bufferCount) + " samples)";
+    Serial.println(publishedInfo);
+    if (debugStreamActive) {
+      client.publish(PUB_DEBUG_STREAM, publishedInfo.c_str());
+    }
+  }
+
+  // Print/publish buffer contents for debug
+  String debugInfo = "Averages - T:" + String(avgTemp,2) + ", H:" + String(avgHumid,2) + ", S:" + String(avgSubstrate,1) + ", L:" + String(avgLight,1) + " (" + String(bufferCount) + " samples)\n";
+  debugInfo += "Raw buffers: T[";
+  for (int i = 0; i < bufferCount; i++) debugInfo += String(tempBuffer[i],2) + (i<bufferCount-1?",":"");
+  debugInfo += "] H[";
+  for (int i = 0; i < bufferCount; i++) debugInfo += String(humidBuffer[i],2) + (i<bufferCount-1?",":"");
+  debugInfo += "] S[";
+  for (int i = 0; i < bufferCount; i++) debugInfo += String(substrateBuffer[i],1) + (i<bufferCount-1?",":"");
+  debugInfo += "] L[";
+  for (int i = 0; i < bufferCount; i++) debugInfo += String(lightBuffer[i],1) + (i<bufferCount-1?",":"");
+  debugInfo += "]";
+
+  Serial.println(debugInfo);
+  if (debugStreamActive) {
+    client.publish(PUB_DEBUG_STREAM, debugInfo.c_str());
+  }
+
   // Clear buffers after publishing to ensure fresh data for next request
   clearBuffers();
+  ledFlash(2, 100, 50); // Quick flash to indicate publish
 }
 
-// MQTT callback function
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  if (strcmp(topic, SUB_REQ) == 0) {
-    char reqTimestamp[24];
-    unsigned int n = (length < sizeof(reqTimestamp) - 1) ? length : (sizeof(reqTimestamp) - 1);
-    memcpy(reqTimestamp, payload, n);
-    reqTimestamp[n] = '\0';
 
-    Serial.print("SUB_REQ received: ");
-    Serial.println(reqTimestamp);
-
-    publishFilteredData();
-  }
-}
 
 //MQTT Reconnect
 void mqtt_reconnect() {
   while (!client.connected()) {
     if (client.connect("ESP32Client", MQTT_USER, MQTT_PASS)) { //mqtt_user, mqtt_pass
-      Serial.println("connected!");
+      Serial.println("MQTT connected!");
       client.subscribe(SUB_REQ);
+      client.subscribe(SUB_DEBUG);
+      ledFlash(3, 100, 50);
     } else {
       delay(2000);
     }
@@ -268,15 +452,15 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
     delay(300);
     Serial.print('.');
-    ledFlash(1, 100);
+    ledFlash(1, 200, 0);
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWiFi connected!");
     Serial.print("IP: "); Serial.println(WiFi.localIP());
-    ledFlash(3, 100);
+    ledFlash(3, 100, 50);
   } else {
     Serial.println("\nWiFi connect failed.");
-    ledFlash(5, 500);
+    ledFlash(5, 750, 250);
   }
   // Initialize DHT sensor
   dht.begin();
@@ -288,9 +472,7 @@ void setup() {
   // Configure ADC resolution
   analogReadResolution(12); // Ensure 12-bit ADC resolution
 
-  // Flash LED to indicate setup complete (acts as delay)
-  ledFlash(10, 100);
-
+  
   // Sensor calibration
   sensorCalib();
   
@@ -299,6 +481,8 @@ void setup() {
   client.setCallback(mqttCallback);
   mqtt_reconnect();
   
+  // Flash LED to indicate setup complete (acts as delay)
+  ledFlash(10, 100, 50);
 
   Serial.println("Pickafresa Crop Sensor Initialized");
   
@@ -354,16 +538,46 @@ void loop() {
   }
   client.loop();
 
-  unsigned long now = millis();
-  if (now - lastMsg >= 30000) {   // every ~7 s
-    lastMsg = now;
+  // Optional: Still show real-time readings for debugging (less frequent)
+  if (currentTime - lastMsg >= 10000) { // Every 10 seconds
+    lastMsg = currentTime;
+    
+    // Quick real-time readings for debug
+    int substrateHumid0 = analogRead(shs0Pin);
+    int substrateHumid1 = analogRead(shs1Pin);
+    int substrateHumid2 = analogRead(shs2Pin);
+    float ambientHumid = dht.readHumidity();
+    float ambientTemp = dht.readTemperature();
+    int lecturaLDR = analogRead(ldrPin);
 
-  delay(1000);
+    int substrateHumid0Perc = constrain(map(substrateHumid0, shs0Air, shs0Water, 0, 100), 0, 100);
+    int substrateHumid1Perc = constrain(map(substrateHumid1, shs0Air, shs0Water, 0, 100), 0, 100);
+    int substrateHumid2Perc = constrain(map(substrateHumid2, shs0Air, shs0Water, 0, 100), 0, 100);
+    int lightPerc = constrain(map(lecturaLDR, ldrNoLight, ldrLight, 0, 100), 0, 100);
+
+    //check for sensor errors
+    checkSensorErrors(substrateHumid0, substrateHumid1, substrateHumid2,
+                      ambientTemp, ambientHumid, lecturaLDR,
+                      substrateHumid0Perc, substrateHumid1Perc, substrateHumid2Perc,
+                      lightPerc, ambientTemp, ambientHumid);
+
+
+    char debugMsg[128];
+    snprintf(debugMsg, sizeof(debugMsg),
+      "Real-time - SH: %d (%d), %d (%d), %d (%d)%% | T: %.2f°C | H: %.2f%% | L: %d (%d)%%",
+      substrateHumid0Perc, substrateHumid0,
+      substrateHumid1Perc, substrateHumid1,
+      substrateHumid2Perc, substrateHumid2,
+      ambientTemp, ambientHumid,
+      lightPerc, lecturaLDR);
+
+    Serial.println(debugMsg);
+    if (debugStreamActive) {
+      client.publish(PUB_DEBUG_STREAM, debugMsg);
+    }
+    ledFlash(1, 50, 0); // Quick flash to indicate activity
   }
+  
 
-}
-
-void stopwatchReset() {
-  // Reset stopwatch timer
-
+  delay(100); // Small delay to prevent overwhelming the system
 }
