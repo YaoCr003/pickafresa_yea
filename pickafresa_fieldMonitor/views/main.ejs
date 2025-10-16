@@ -95,19 +95,19 @@
             alerts.push("❄️ Low temperature!");
         <% } %>
 
-        <% if (measure[0]?.ambient_humidity > 80) { %>
+        <% if (measure[0]?.ambient_humidity > 75) { %>
             alerts.push("💧 High humidity, risk of fungi!");
-        <% } else if (measure[0]?.ambient_humidity < 60) { %>
+        <% } else if (measure[0]?.ambient_humidity < 55) { %>
             alerts.push("💧 Low ambient humidity, probability of water stress!");
         <% } %>
 
-        <% if (measure[0]?.substrate_moisture > 70) { %>
+        <% if (measure[0]?.substrate_moisture > 80) { %>
             alerts.push("🌱 High substrate humidity, risk of rot!");
-        <% } else if (measure[0]?.substrate_moisture < 60) { %>
+        <% } else if (measure[0]?.substrate_moisture < 55) { %>
             alerts.push("🌱 Low substrate moisture, risk of water stress!");
         <% } %>
 
-        <% if (measure[0]?.percentage_light < 70) { %>
+        <% if (measure[0]?.percentage_light < 60) { %>
             alerts.push("☀️Little light available!");
         <% } %>
 
