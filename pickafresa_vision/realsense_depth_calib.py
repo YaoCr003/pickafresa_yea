@@ -5,37 +5,71 @@ import pandas as pd
 import sys
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
+import time
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except:
     pass
 
-def start_safe(pipe):
-    cfg = rs.config()
-    # Try depth first, conservative
-    tried = [
-        (rs.stream.depth, 640, 480, rs.format.z16, 15),
-        (rs.stream.depth, 848, 480, rs.format.z16, 30),
-        (rs.stream.depth, 424, 240, rs.format.z16, 30),
-    ]
-    for st,w,h,fmt,fps in tried:
-        c2 = rs.config()
-        c2.enable_stream(st, w, h, fmt, fps)
-        try:
-            return pipe.start(c2)
-        except Exception:
-            pass
-    raise RuntimeError("No viable depth profile found")
-
 # ------------------ CONFIGURATION ------------------
+# Adaptive configuration: try a sequence of color/depth profiles from high to low bandwidth
+
+def start_adaptive(pipeline: rs.pipeline):
+    """Try several color/depth combinations from higher to lower bandwidth.
+    Return (profile, color_sel, depth_sel) when both streams deliver frames.
+    color_sel/depth_sel are tuples (w, h, fps) for logging/debug.
+    """
+    attempts = [
+        # (color_w, color_h, color_fmt, color_fps, depth_w, depth_h, depth_fmt, depth_fps)
+        (640, 480, rs.format.bgr8, 30, 640, 480, rs.format.z16, 30),
+        (848, 480, rs.format.bgr8, 30, 848, 480, rs.format.z16, 30),
+        (640, 480, rs.format.bgr8, 15, 640, 480, rs.format.z16, 15),
+        (424, 240, rs.format.bgr8, 15, 424, 240, rs.format.z16, 15),
+        (320, 240, rs.format.bgr8,  6, 320, 240, rs.format.z16,  6),
+    ]
+    last_err = None
+    for cw, ch, cfmt, cfps, dw, dh, dfmt, dfps in attempts:
+        cfg = rs.config()
+        cfg.enable_stream(rs.stream.color, cw, ch, cfmt, cfps)
+        cfg.enable_stream(rs.stream.depth, dw, dh, dfmt, dfps)
+        try:
+            profile = pipeline.start(cfg)
+            # Briefly verify both streams actually produce frames
+            ok = False
+            for _ in range(10):
+                try:
+                    frames = pipeline.wait_for_frames(1500)
+                    if frames and frames.get_color_frame() and frames.get_depth_frame():
+                        ok = True
+                        break
+                except Exception:
+                    time.sleep(0.05)
+            if ok:
+                print(f"Using color {cw}x{ch}@{cfps}, depth {dw}x{dh}@{dfps}")
+                return profile, (cw, ch, cfps), (dw, dh, dfps)
+            else:
+                pipeline.stop()
+                time.sleep(0.2)
+        except Exception as e:
+            last_err = e
+            try:
+                pipeline.stop()
+            except Exception:
+                pass
+            time.sleep(0.2)
+    raise RuntimeError(f"Failed to start RealSense pipeline with any fallback. Last error: {last_err}")
+
 pipeline = rs.pipeline()
-config = rs.config()
-config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-profile = pipeline.start(config)
+profile, color_sel, depth_sel = start_adaptive(pipeline)
 
 depth_sensor = profile.get_device().first_depth_sensor()
+try:
+    if depth_sensor.supports(rs.option.emitter_enabled):
+        depth_sensor.set_option(rs.option.emitter_enabled, 1)
+except Exception:
+    pass
+
 depth_scale = depth_sensor.get_depth_scale()
 align = rs.align(rs.stream.color)
 
