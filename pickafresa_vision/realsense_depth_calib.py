@@ -11,6 +11,23 @@ try:
 except:
     pass
 
+def start_safe(pipe):
+    cfg = rs.config()
+    # Try depth first, conservative
+    tried = [
+        (rs.stream.depth, 640, 480, rs.format.z16, 15),
+        (rs.stream.depth, 848, 480, rs.format.z16, 30),
+        (rs.stream.depth, 424, 240, rs.format.z16, 30),
+    ]
+    for st,w,h,fmt,fps in tried:
+        c2 = rs.config()
+        c2.enable_stream(st, w, h, fmt, fps)
+        try:
+            return pipe.start(c2)
+        except Exception:
+            pass
+    raise RuntimeError("No viable depth profile found")
+
 # ------------------ CONFIGURATION ------------------
 pipeline = rs.pipeline()
 config = rs.config()
@@ -22,14 +39,14 @@ depth_sensor = profile.get_device().first_depth_sensor()
 depth_scale = depth_sensor.get_depth_scale()
 align = rs.align(rs.stream.color)
 
-print(f"Escala de profundidad: {depth_scale:.6f} m/unidad")
+print(f"Depth Scale: {depth_scale:.6f} m/unit")
 
 # ------------------ VARIABLES ------------------
 clicked_point = None
 current_depth = None
 real_distance = ""
-mediciones = []
-show_text = "Haz clic para medir y escribe la distancia real"
+measurements = []
+show_text = "Click to get depth measurement. Write actual distance."
 
 def get_depth_value(depth_frame, x, y, window=5):
     h, w = depth_frame.get_height(), depth_frame.get_width()
@@ -63,15 +80,15 @@ cv2.namedWindow("RealSense Calibration")
 callback_params = {}
 cv2.setMouseCallback("RealSense Calibration", mouse_callback, callback_params)
 
-print("\n📸 Calibración interactiva iniciada.")
-print("1️⃣ Click on a point to measure distance.")
-print("2️⃣ Type the actual distance (numbers) directly on the keyboard.")
-print("3️⃣ Press Enter to save the point.")
-print("4️⃣ Press 'q' to exit.\n")
+print("\n Interactive RealSense D435 Depth Calibration")
+print("1) Click on a point to measure distance.")
+print("2) Type the actual distance (m) directly on the keyboard.")
+print("3) Press Enter to save the point.")
+print("4) Press 'q' to exit.\n")
 
 try:
     while True:
-        frames = pipeline.wait_for_frames()
+        frames = pipeline.wait_for_frames(10000)
         aligned_frames = align.process(frames)
         depth_frame = aligned_frames.get_depth_frame()
         color_frame = aligned_frames.get_color_frame()
@@ -87,7 +104,7 @@ try:
         )
         combined = cv2.addWeighted(color_image, 0.6, depth_colormap, 0.4, 0)
 
-        # Dibuja información actual
+        # Draw current clicked point and depth
         if clicked_point:
             cv2.circle(combined, clicked_point, 5, (0, 255, 255), -1)
             if current_depth:
@@ -109,18 +126,18 @@ try:
         if key == ord('q'):
             break
 
-        # Si presionas Enter
+        # If Enter is pressed
         elif key == 13 and current_depth and real_distance:
             try:
                 val = float(real_distance)
-                mediciones.append((val, current_depth))
-                print(f"✅ Saved: real={val:.3f} m, camera={current_depth:.3f} m\n")
+                measurements.append((val, current_depth))
+                print(f"Saved: real={val:.3f} m, camera={current_depth:.3f} m\n")
                 show_text = "Saved point. Click on another point."
                 real_distance = ""
                 current_depth = None
                 clicked_point = None
             except ValueError:
-                show_text = "Invalid entry."
+                show_text = "Invalid entry!"
                 real_distance = ""
 
         # If Backspace is pressed
@@ -135,14 +152,14 @@ finally:
     pipeline.stop()
     cv2.destroyAllWindows()
 
-# ------------------ CALIBRACIÓN ------------------
-if len(mediciones) < 2:
-    print("⚠️ Not enough points to calibrate.")
+# ------------------ Calibration ------------------
+if len(measurements) < 2:
+    print("Not enough points to calibrate!")
     sys.exit()
 
-df = pd.DataFrame(mediciones, columns=["real", "cam"])
-df.to_csv("calibracion_realsense.csv", index=False)
-print("\n📄 Data saved in 'calibracion_realsense.csv''.")
+df = pd.DataFrame(measurements, columns=["real", "cam"])
+df.to_csv("realsense_calib.csv", index=False)
+print("\n Data saved in 'realsense_calib.csv''.")
 
 X = df["cam"].values.reshape(-1, 1)
 y = df["real"].values
@@ -153,7 +170,7 @@ df["pred"] = model.predict(X)
 df["error_mm"] = (df["pred"] - df["real"]) * 1000
 error_prom = abs(df["error_mm"]).mean()
 
-print(f"\n📈 Fitted model:")
+print(f"\n Fitted model:")
 print(f"Z_real = {a:.4f} * Z_cam + {b:.4f}")
 print(f"Average error: {error_prom:.1f} mm\n")
 
