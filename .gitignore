@@ -4,3 +4,14 @@ pickafresa_cropSensor/.DS_Store
 
 # Visual Studio Code specific files
 pickafresa_cropSensor.code-workspace
+.vscode/
+.history/
+*.code-workspace
+
+# Python specific files
+__pycache__/
+
+# MacOS-Realsense specific files
+realsense_venv_sudo
+
+
