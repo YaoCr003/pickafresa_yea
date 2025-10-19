@@ -14,4 +14,12 @@ __pycache__/
 # MacOS-Realsense specific files
 realsense_venv_sudo
 
+/pickafresa_vision/datasets/*/
+
+# Secrets and local environment files
+.env
+.env.*
+*.env
+pickafresa_vision/.env
+pickafresa_vision/**/.env
 
