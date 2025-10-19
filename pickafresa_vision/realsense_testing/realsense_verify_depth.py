@@ -1,3 +1,10 @@
+'''
+RealSense D400 Series Depth Profile Verification Tool
+Tests multiple depth stream configurations to identify which produce valid frames.
+
+Team YEA, 2025
+'''
+
 import time, pyrealsense2 as rs
 
 # Depth profile sweep for D435: test multiple modes from high→low bandwidth

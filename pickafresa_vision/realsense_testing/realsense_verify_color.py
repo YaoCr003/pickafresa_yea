@@ -1,3 +1,10 @@
+'''
+RealSense D400 Series Color Stream Verification Tool
+Tests if the color stream can be started with a basic configuration.
+
+Team YEA, 2025
+'''
+
 import pyrealsense2 as rs
 pipe = rs.pipeline()
 cfg = rs.config()

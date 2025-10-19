@@ -1,3 +1,10 @@
+'''
+RealSense D400 Series Full Stream Verification Tool
+Verifies both color and depth streams can be started and displays them.
+
+Team YEA, 2025
+'''
+
 import pyrealsense2 as rs
 import cv2
 import numpy as np
