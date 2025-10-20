@@ -22,3 +22,10 @@ realsense_venv_sudo
 pickafresa_vision/.env
 pickafresa_vision/**/.env
 
+# Image files
+pickafresa_vision/images/
+captures/
+
+# Large data files
+pickafresa_vision/datasets/*.zip
+pickafresa_vision/datasets/*.tar.gz
