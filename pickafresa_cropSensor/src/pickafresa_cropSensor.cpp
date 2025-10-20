@@ -541,6 +541,12 @@ void loop() {
   // Current time for interval checks
   unsigned long currentTime = millis();
 
+  // Record sensor data to buffer at specified interval
+  if (currentTime - lastSensorRead >= RECORDING_INTERVAL) {
+    lastSensorRead = currentTime;
+    recordSensorData();
+  }
+
   // Optional: Still show real-time readings for debugging (less frequent)
   if (currentTime - lastMsg >= 10000) { // Every 10 seconds
     lastMsg = currentTime;
