@@ -23,8 +23,10 @@ pickafresa_vision/.env
 pickafresa_vision/**/.env
 
 # Image files
-pickafresa_vision/images/
+pickafresa_vision/images/*
+!pickafresa_vision/images/**/*.*
 captures/
+!pickafresa_vision/images/**.txt
 
 # Large data files
 pickafresa_vision/datasets/*.zip
