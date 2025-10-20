@@ -538,6 +538,9 @@ void loop() {
   }
   client.loop();
 
+  // Current time for interval checks
+  unsigned long currentTime = millis();
+
   // Optional: Still show real-time readings for debugging (less frequent)
   if (currentTime - lastMsg >= 10000) { // Every 10 seconds
     lastMsg = currentTime;
