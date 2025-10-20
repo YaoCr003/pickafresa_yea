@@ -18,7 +18,6 @@ realsense_venv_sudo
 
 # Secrets and local environment files
 .env
-.env.*
 *.env
 pickafresa_vision/.env
 pickafresa_vision/**/.env
