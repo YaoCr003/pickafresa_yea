@@ -1,0 +1,50 @@
+calibration_date: '2025-10-20T12:24:31.504289'
+camera_model: RealSense D400 Series
+image_size:
+  width: 640
+  height: 480
+pattern_type: circular
+pattern_size:
+  cols: 4
+  rows: 13
+camera_matrix:
+  rows: 3
+  cols: 3
+  data:
+  - 58795.210615016644
+  - 0.0
+  - 369.41918388974864
+  - 0.0
+  - 15121.499976584322
+  - 153.52839974318084
+  - 0.0
+  - 0.0
+  - 1.0
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data:
+  - 84.04198335568644
+  - 2845.047493307992
+  - 0.20602151067061258
+  - -0.15568488742052727
+  - 18.68047022636988
+camera_intrinsics:
+  fx: 58795.210615016644
+  fy: 15121.499976584322
+  cx: 369.41918388974864
+  cy: 153.52839974318084
+distortion_model: plumb_bob
+distortion_parameters:
+  k1: 84.04198335568644
+  k2: 2845.047493307992
+  p1: 0.20602151067061258
+  p2: -0.15568488742052727
+  k3: 18.68047022636988
+calibration_quality:
+  mean_reprojection_error: 1.8228343600335224
+  num_images_used: 21
+  total_images: 30
+pattern_parameters:
+  circle_diameter_mm: 6.0
+  circle_spacing_mm: 13.0
