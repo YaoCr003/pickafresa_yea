@@ -1,0 +1,20 @@
+{
+  "name": "pickafresa_fieldmonitor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "choices.js": "^11.1.0",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "mysql2": "^3.15.1",
+    "nodemon": "^3.1.10"
+  }
+}
