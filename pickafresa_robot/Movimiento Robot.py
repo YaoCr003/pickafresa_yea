@@ -7,7 +7,9 @@ home_target = RDK.Item('Home', ITEM_TYPE_TARGET)
 foto_target = RDK.Item('Foto', ITEM_TYPE_TARGET)
 T5_target = RDK.Item('Target 5', ITEM_TYPE_TARGET)
 
+
 item = RDK.ItemUserPick('UR3e', ITEM_TYPE_ROBOT)
+item.setSpeed(30, 30) 
 
 item.Connect()  # Intenta conexión activa (opcional)
 

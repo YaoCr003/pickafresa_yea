@@ -21,6 +21,7 @@ realsense_venv_sudo
 *.env
 pickafresa_vision/.env
 pickafresa_vision/**/.env
+pickafresa_yea.venv
 
 # Image files
 pickafresa_vision/images/*
