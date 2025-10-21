@@ -20,14 +20,22 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 import pyrealsense2 as rs
+import importlib
+
+# Ensure repository root is on sys.path for absolute package imports when run directly
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 try:
     from ultralytics import YOLO  # type: ignore
@@ -38,6 +46,29 @@ try:
     import yaml
 except Exception:  # pragma: no cover - optional dependency
     yaml = None  # type: ignore[assignment]
+
+# Local utilities
+from pickafresa_vision.vision_tools.config_store import (
+    load_config,
+    save_config,
+    get_namespace,
+    update_namespace,
+)
+def _import_inference_api():
+    mod = None
+    for name in (
+        "pickafresa_vision.vision_nodes.inference_bbox",
+        "pickafresa_vision.vision_nodes.inference_node_bbox",
+    ):
+        try:
+            mod = importlib.import_module(name)
+            return mod
+        except Exception:
+            continue
+    return None
+
+_INF_MOD = _import_inference_api()
+HAVE_INFERENCE_API = _INF_MOD is not None
 
 
 @dataclass
@@ -115,27 +146,63 @@ def load_camera_intrinsics(path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def _extract_camera_matrix(data: Dict, origin: Path) -> np.ndarray:
-    if "camera_matrix" not in data:
-        raise KeyError(f"camera_matrix not found in {origin}")
+    # Prefer explicit OpenCV-style matrix
+    cm = data.get("camera_matrix")
+    if cm is not None:
+        if isinstance(cm, dict) and "data" in cm:
+            arr = np.array(cm["data"], dtype=np.float32).reshape(int(cm.get("rows", 3)), int(cm.get("cols", 3)))
+        else:
+            arr = np.array(cm, dtype=np.float32).reshape(3, 3)
+        if arr.shape != (3, 3):
+            raise ValueError(f"camera_matrix in {origin} must be 3x3")
+        return arr
 
-    cm = data["camera_matrix"]
-    if isinstance(cm, dict) and "data" in cm:
-        arr = np.array(cm["data"], dtype=np.float32).reshape(int(cm.get("rows", 3)), int(cm.get("cols", 3)))
-    else:
-        arr = np.array(cm, dtype=np.float32).reshape(3, 3)
+    # Fallback to scalar intrinsics
+    intr = data.get("camera_intrinsics")
+    if isinstance(intr, dict):
+        fx = float(intr.get("fx"))
+        fy = float(intr.get("fy"))
+        cx = float(intr.get("cx"))
+        cy = float(intr.get("cy"))
+        arr = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]], dtype=np.float32)
+        return arr
 
-    if arr.shape != (3, 3):
-        raise ValueError(f"camera_matrix in {origin} must be 3x3")
-    return arr
+    raise KeyError(f"camera_matrix or camera_intrinsics not found in {origin}")
 
 
 def _extract_dist_coeffs(data: Dict) -> np.ndarray:
-    coeffs = data.get("dist_coeffs", [0, 0, 0, 0, 0])
-    if isinstance(coeffs, dict) and "data" in coeffs:
-        arr = np.array(coeffs["data"], dtype=np.float32)
-    else:
-        arr = np.array(coeffs, dtype=np.float32)
-    return arr.reshape((-1, 1))
+    """Return distortion coefficients as an (N,1) float32 array.
+
+    Supports keys: "dist_coeffs" (OpenCV style), "distortion_coefficients" (rows/cols/data),
+    or "distortion_parameters" as individual named coefficients.
+    """
+    if "dist_coeffs" in data:
+        coeffs = data.get("dist_coeffs")
+        if isinstance(coeffs, dict) and "data" in coeffs:
+            arr = np.array(coeffs["data"], dtype=np.float32)
+        else:
+            arr = np.array(coeffs, dtype=np.float32)
+        return arr.reshape((-1, 1))
+
+    if "distortion_coefficients" in data:
+        node = data["distortion_coefficients"]
+        if isinstance(node, dict) and "data" in node:
+            arr = np.array(node["data"], dtype=np.float32)
+            return arr.reshape((-1, 1))
+
+    # Named parameters map: k1,k2,p1,p2,k3 (OpenCV plumb_bob order)
+    if "distortion_parameters" in data and isinstance(data["distortion_parameters"], dict):
+        dp = data["distortion_parameters"]
+        k1 = float(dp.get("k1", 0.0))
+        k2 = float(dp.get("k2", 0.0))
+        p1 = float(dp.get("p1", 0.0))
+        p2 = float(dp.get("p2", 0.0))
+        k3 = float(dp.get("k3", 0.0))
+        arr = np.array([k1, k2, p1, p2, k3], dtype=np.float32)
+        return arr.reshape((-1, 1))
+
+    # Default to zero-distortion
+    return np.zeros((5, 1), dtype=np.float32)
 
 
 def _load_intrinsics_with_filestorage(path: Path) -> Tuple[np.ndarray, np.ndarray]:
@@ -254,37 +321,63 @@ class YOLODetectionProvider:
         target_class: Optional[str],
         confidence: float,
     ) -> None:
-        if YOLO is None:
-            raise ImportError("ultralytics is required for YOLO-based detection")
-
-        self.model = YOLO(str(model_path))
+        # Try the unified inference API first
+        self.use_inference_api = False
+        self.model = None
+        if HAVE_INFERENCE_API:
+            try:
+                self.model = getattr(_INF_MOD, "load_model")(str(model_path))
+                self.use_inference_api = True
+            except Exception:
+                self.use_inference_api = False
+                self.model = None
+        if not self.use_inference_api:
+            if YOLO is None:
+                raise ImportError("ultralytics is required for YOLO-based detection")
+            self.model = YOLO(str(model_path))
         self.target_class = target_class
         self.confidence = confidence
 
     def __call__(self, frame: np.ndarray) -> List[Detection]:
-        results = self.model(frame, verbose=False, conf=self.confidence)
         detections: List[Detection] = []
-
+        if self.use_inference_api:
+            try:
+                dets, bboxes = getattr(_INF_MOD, "infer")(self.model, frame, conf=self.confidence, bbox_format="xyxy", normalized=False, display=False)
+                for d in dets:
+                    label = getattr(d, "clazz", str(getattr(d, "class_id", "0")))
+                    if self.target_class and label != self.target_class and str(getattr(d, "class_id", label)) != self.target_class:
+                        continue
+                    x1, y1, x2, y2 = d.bbox_xyxy
+                    detections.append(
+                        Detection(
+                            bbox=(int(x1), int(y1), int(x2), int(y2)),
+                            label=str(label),
+                            confidence=float(d.confidence),
+                        )
+                    )
+                return detections
+            except Exception:
+                # Fallback to direct Ultralytics call below
+                self.use_inference_api = False
+        # Direct Ultralytics fallback
+        results = self.model(frame, verbose=False, conf=self.confidence)
         for result in results:
             if not hasattr(result, "boxes"):
                 continue
             for box in result.boxes:
                 conf = float(box.conf.item())
                 cls_idx = int(box.cls.item())
-                label = self.model.names.get(cls_idx, str(cls_idx))
-
+                label = getattr(self.model, "names", {}).get(cls_idx, str(cls_idx))
                 if self.target_class and label != self.target_class and str(cls_idx) != self.target_class:
                     continue
-
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 detections.append(
                     Detection(
                         bbox=(int(x1), int(y1), int(x2), int(y2)),
-                        label=label,
+                        label=str(label),
                         confidence=conf,
                     )
                 )
-
         return detections
 
 
@@ -332,6 +425,8 @@ class RealSenseStream:
         self.pipeline: Optional[rs.pipeline] = None
         self.align: Optional[rs.align] = None
         self.depth_scale: float = 0.0
+        # Depth filters tuned for D435: Convert to disparity -> spatial -> temporal -> back -> hole fill
+        self._filters: List = []
 
     def __enter__(self) -> "RealSenseStream":
         width, height = self.resolution
@@ -344,6 +439,21 @@ class RealSenseStream:
         depth_sensor = profile.get_device().first_depth_sensor()
         self.depth_scale = depth_sensor.get_depth_scale()
         self.align = rs.align(rs.stream.color)
+        try:
+            self._filters = [
+                rs.disparity_transform(True),
+                rs.spatial_filter(),
+                rs.temporal_filter(),
+                rs.disparity_transform(False),
+                rs.hole_filling_filter(),
+            ]
+            # Light tuning
+            spatial: rs.spatial_filter = self._filters[1]
+            spatial.set_option(rs.option.holes_fill, 3)
+            temporal: rs.temporal_filter = self._filters[2]
+            temporal.set_option(rs.option.alpha, 0.5)
+        except Exception:
+            self._filters = []
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -363,6 +473,15 @@ class RealSenseStream:
 
         if not depth_frame or not color_frame:
             raise RuntimeError("Failed to retrieve frames from RealSense pipeline")
+
+        # Apply depth filtering pipeline if available (improves D435 depth reliability)
+        try:
+            f = depth_frame
+            for flt in self._filters:
+                f = flt.process(f)
+            depth_frame = f.as_depth_frame()  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         color_image = np.asanyarray(color_frame.get_data())
         return color_image, depth_frame
@@ -407,26 +526,70 @@ def build_detection_provider(args: argparse.Namespace) -> Optional[Callable[[np.
 
 
 def run(args: argparse.Namespace) -> None:
-    intrinsics_path = Path(args.intrinsics)
-    cached_intrinsics_yaml = _maybe_yaml(intrinsics_path)
+    # Resolve intrinsics path (interactive discovery if missing)
+    intrinsics_path = Path(args.intrinsics) if args.intrinsics else _discover_or_prompt_intrinsics()
+    cached_intrinsics_yaml = _maybe_yaml(intrinsics_path) if intrinsics_path.exists() else {}
     camera_matrix, dist_coeffs = load_camera_intrinsics(intrinsics_path)
     world_points: Dict[str, np.ndarray] = {}
 
+    # World points can be embedded in intrinsics YAML or separate file
     if args.world_points:
         world_points = load_world_points(Path(args.world_points))
     elif cached_intrinsics_yaml.get("world_points"):
         world_points = _extract_world_points(cached_intrinsics_yaml, intrinsics_path)
+    else:
+        # Optionally prompt user
+        if _yes_no_input("Provide a world-points YAML for full PnP (optional)? [y/N]: "):
+            wp = input("Enter path to world_points YAML: ").strip()
+            if wp:
+                try:
+                    world_points = load_world_points(Path(wp))
+                except Exception as e:
+                    print(f"Could not load world points: {e}")
+
+    # Build detection provider (interactive if needed)
+    # Load persisted config defaults
+    cfg = load_config()
+    ns = get_namespace(cfg, "bbox_depth_auto_pnp_calc")
 
     provider = build_detection_provider(args)
-    sampler = DepthSampler(window=args.depth_window, min_valid=args.min_valid_depth_samples)
-
     if provider is None:
-        print("Warning: no detection provider configured; pass --model or --detections.", file=sys.stderr)
+        provider = _prompt_detection_provider(ns)
+        if provider is None:
+            print("No detection source configured; exiting.", file=sys.stderr)
+            return
 
-    with RealSenseStream((args.width, args.height), args.fps) as stream:
+    # Sampler configuration (interactive if missing)
+    depth_window = args.depth_window or int(ns.get("depth_window", _int_input("Depth median window (odd) [5]: ", 5)))
+    min_valid = args.min_valid_depth_samples or int(ns.get("min_valid_depth_samples", _int_input("Min valid depth samples [3]: ", 3)))
+    sampler = DepthSampler(window=depth_window, min_valid=min_valid)
+
+    # Stream configuration
+    width = args.width or int(ns.get("width", _int_input("Color/Depth width [640]: ", 640)))
+    height = args.height or int(ns.get("height", _int_input("Color/Depth height [480]: ", 480)))
+    fps = args.fps or int(ns.get("fps", _int_input("Stream FPS [30]: ", 30)))
+    max_frames_default = int(ns.get("max_frames", 0))
+    max_frames = args.max_frames if args.max_frames is not None else _int_input("Max frames (0 = infinite) [0]: ", max_frames_default)
+    max_frames = None if max_frames == 0 else max_frames
+    display = bool(args.display or ns.get("display", _yes_no_input("Display annotated frames? [Y/n]: ", default=True)))
+    use_ransac = (not args.disable_ransac) if args.disable_ransac is not None else bool(ns.get("use_ransac", _yes_no_input("Use RANSAC for PnP? [Y/n]: ", default=True)))
+
+    # Persist choices
+    update_namespace(cfg, "bbox_depth_auto_pnp_calc", {
+        "depth_window": depth_window,
+        "min_valid_depth_samples": min_valid,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "max_frames": (0 if max_frames is None else max_frames),
+        "display": display,
+        "use_ransac": use_ransac,
+    })
+
+    with RealSenseStream((width, height), fps) as stream:
         print(f"Depth scale: {stream.depth_scale:.6f} meters/unit")
         frame_count = 0
-        while args.max_frames is None or frame_count < args.max_frames:
+        while max_frames is None or frame_count < max_frames:
             color_image, depth_frame = stream.get_aligned_frames()
             detections: List[Detection] = provider(color_image) if provider else []
 
@@ -449,22 +612,45 @@ def run(args: argparse.Namespace) -> None:
                     object_points.append(world_points[det.label])
                     image_points.append(center)
 
-            pose = solve_pnp(object_points, image_points, camera_matrix, dist_coeffs, use_ransac=not args.disable_ransac)
+            pose = solve_pnp(object_points, image_points, camera_matrix, dist_coeffs, use_ransac=use_ransac)
             if pose:
                 rvec, tvec, inliers = pose
                 rotation_matrix, _ = cv2.Rodrigues(rvec)
-                print(
-                    f"[PnP] tvec={tvec.ravel()} (m)  "
-                    f"Euler={rotation_matrix_to_euler(rotation_matrix)} (rad)  "
-                    f"inliers={len(inliers)}/{len(object_points)}"
-                )
+                euler = rotation_matrix_to_euler(rotation_matrix)
+                print(f"[PnP] Camera pose w.r.t world: tvec={tvec.ravel()} (m), Euler(ZYX)={euler} (rad), inliers={len(inliers)}/{len(object_points)}")
             elif object_points:
                 print("[PnP] Not enough correspondences or solvePnP failed.")
 
+            # Output per-fruit transforms (fruit center in camera frame)
             for idx, point in translations.items():
-                print(f"Detection {idx}: depth={depths.get(idx, float('nan')):.3f} m, camera_point={point}")
+                T = np.eye(4, dtype=np.float32)
+                T[:3, 3] = point
+                depth_val = depths.get(idx, float("nan"))
+                print(f"Fruit[{idx}] label='{detections[idx].label}' depth={depth_val:.3f} m pos_cam={point} \nT_cam_fruit=\n{T}")
 
-            if args.display:
+            # Optional JSON-lines export for downstream fusion
+            export_path = ns.get("export_json_path", "")
+            if export_path:
+                try:
+                    payload = {
+                        "frame_index": frame_count,
+                        "fruits": [
+                            {
+                                "index": int(idx),
+                                "label": str(detections[idx].label),
+                                "depth_m": float(depths.get(idx, float("nan"))),
+                                "pos_cam": [float(x) for x in translations[idx].tolist()],
+                                "T_cam_fruit": np.eye(4, dtype=float).tolist() if idx not in translations else _t_from_pos(translations[idx]).tolist(),
+                            }
+                            for idx in sorted(translations.keys())
+                        ],
+                    }
+                    with open(export_path, "a", encoding="utf-8") as fh:
+                        fh.write(json.dumps(payload) + "\n")
+                except Exception as e:
+                    print(f"Export error: {e}")
+
+            if display:
                 vis = annotate_frame(color_image, detections, depths, translations)
                 cv2.imshow("PnP Estimation", vis)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -472,7 +658,7 @@ def run(args: argparse.Namespace) -> None:
 
             frame_count += 1
 
-    if args.display:
+    if display:
         cv2.destroyAllWindows()
 
 
@@ -481,6 +667,102 @@ def _maybe_yaml(path: Path) -> Dict:
         return {}
     with path.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
+
+
+def _t_from_pos(p: np.ndarray) -> np.ndarray:
+    T = np.eye(4, dtype=float)
+    T[:3, 3] = np.asarray(p, dtype=float).reshape(3)
+    return T
+
+
+# ---------- Interactive helpers and discovery ----------
+
+DEFAULT_CALIB_DIR = REPO_ROOT / "pickafresa_vision" / "camera_calibration"
+
+
+def _discover_or_prompt_intrinsics() -> Path:
+    """Find latest 'calib*.yaml' in camera_calibration, else prompt user."""
+    candidates = []
+    if DEFAULT_CALIB_DIR.exists():
+        for p in DEFAULT_CALIB_DIR.glob("calib*.yaml"):
+            ts = _timestamp_from_name(p.name)
+            candidates.append((ts, p))
+    intr_path: Optional[Path] = None
+    if candidates:
+        # Sort by timestamp (fallback to mtime if None)
+        def sort_key(item):
+            ts, p = item
+            return ts or datetime.fromtimestamp(p.stat().st_mtime)
+        candidates.sort(key=sort_key, reverse=True)
+        intr_path = candidates[0][1]
+        print(f"Using intrinsics: {intr_path}")
+    else:
+        print(f"No 'calib*.yaml' found in {DEFAULT_CALIB_DIR}")
+    while intr_path is None or not intr_path.exists():
+        user = input("Enter path to camera intrinsics YAML: ").strip()
+        cand = Path(user)
+        if cand.exists():
+            intr_path = cand
+        else:
+            print("Path not found. Please try again.")
+    return intr_path
+
+
+def _timestamp_from_name(name: str) -> Optional[datetime]:
+    m = re.search(r"(\d{8}_\d{6})", name)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1), "%Y%m%d_%H%M%S")
+    except Exception:
+        return None
+
+
+def _yes_no_input(prompt: str, default: bool = False) -> bool:
+    resp = input(prompt).strip().lower()
+    if resp == "":
+        return default
+    return resp in {"y", "yes"}
+
+
+def _int_input(prompt: str, default: int) -> int:
+    txt = input(prompt).strip()
+    if txt == "":
+        return default
+    try:
+        return int(txt)
+    except Exception:
+        return default
+
+
+def _prompt_detection_provider(ns: Dict) -> Optional[Callable[[np.ndarray], List[Detection]]]:
+    last_choice = str(ns.get("det_source", "1"))
+    print("Choose detection source:\n  1) YOLOv11 model (.pt)\n  2) Offline detections JSON\n  3) None (exit)")
+    choice = input(f"Select [1/2/3] [{last_choice}]: ").strip() or last_choice
+    if choice == "1":
+        model_path = input(f"Path to YOLO .pt [{ns.get('model_path','')}]: ").strip() or str(ns.get('model_path',''))
+        target_class = input(f"Target class label or index (blank=all) [{ns.get('target_class','')}]: ").strip() or (ns.get('target_class') or None)
+        try:
+            conf = float(input(f"Confidence threshold [{ns.get('confidence',0.25)}]: ").strip() or ns.get('confidence',0.25))
+        except Exception:
+            conf = 0.25
+        # persist
+        cfg = load_config()
+        update_namespace(cfg, "bbox_depth_auto_pnp_calc", {"det_source": "1", "model_path": model_path, "target_class": target_class or "", "confidence": conf})
+        return YOLODetectionProvider(Path(model_path), target_class, conf)
+    if choice == "2":
+        json_path = input(f"Path to detections JSON [{ns.get('json_path','')}]: ").strip() or str(ns.get('json_path',''))
+        cfg = load_config()
+        update_namespace(cfg, "bbox_depth_auto_pnp_calc", {"det_source": "2", "json_path": json_path})
+        return JSONDetectionProvider(Path(json_path))
+    # ask export preference once
+    cfg = load_config()
+    ns = get_namespace(cfg, "bbox_depth_auto_pnp_calc")
+    if not ns.get("export_json_path") and _yes_no_input("Export fruit transforms to JSON-lines file for fusion? [y/N]: "):
+        default_path = str((REPO_ROOT / "fruits_stream.jsonl").resolve())
+        path = input(f"Export path [{default_path}]: ").strip() or default_path
+        update_namespace(cfg, "bbox_depth_auto_pnp_calc", {"export_json_path": path})
+    return None
 
 
 def rotation_matrix_to_euler(rotation_matrix: np.ndarray) -> Tuple[float, float, float]:
@@ -501,24 +783,24 @@ def rotation_matrix_to_euler(rotation_matrix: np.ndarray) -> Tuple[float, float,
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="PnP pose estimation using RealSense depth and YOLO detections.")
-    parser.add_argument("--intrinsics", required=True, help="Path to YAML file with camera_matrix and dist_coeffs.")
+    """Optional CLI; if omitted, interactive prompts will be used."""
+    parser = argparse.ArgumentParser(description="PnP pose estimation using RealSense depth and YOLO detections.", add_help=True)
+    parser.add_argument("--intrinsics", help="Path to YAML with intrinsics. If omitted, auto-discover or prompt.")
     parser.add_argument("--world-points", help="Optional YAML with world_points for PnP correspondences.")
     parser.add_argument("--model", help="YOLO model path (requires ultralytics).")
     parser.add_argument("--target-class", help="Label or class index to filter YOLO detections.")
     parser.add_argument("--detections", help="JSON file with offline detections per frame.")
-    parser.add_argument("--confidence", type=float, default=0.25, help="Minimum confidence for YOLO detections.")
-    parser.add_argument("--depth-window", type=int, default=5, help="Square window size for depth median sampling.")
+    parser.add_argument("--confidence", type=float, help="Minimum confidence for YOLO detections.")
+    parser.add_argument("--depth-window", type=int, help="Square window size for depth median sampling.")
     parser.add_argument(
         "--min-valid-depth-samples",
         type=int,
-        default=3,
         dest="min_valid_depth_samples",
         help="Minimum valid depth samples to accept a measurement.",
     )
-    parser.add_argument("--width", type=int, default=640, help="Color/depth stream width.")
-    parser.add_argument("--height", type=int, default=480, help="Color/depth stream height.")
-    parser.add_argument("--fps", type=int, default=30, help="Stream frame rate.")
+    parser.add_argument("--width", type=int, help="Color/depth stream width.")
+    parser.add_argument("--height", type=int, help="Color/depth stream height.")
+    parser.add_argument("--fps", type=int, help="Stream frame rate.")
     parser.add_argument("--max-frames", type=int, help="Optional frame limit for debugging.")
     parser.add_argument("--display", action="store_true", help="Show annotated frames.")
     parser.add_argument("--disable-ransac", action="store_true", help="Use solvePnP instead of solvePnPRansac.")

@@ -41,21 +41,61 @@ from pickafresa_vision.vision_nodes.bbox_depth_auto_pnp_calc import (
     solve_pnp,
     _extract_world_points,
     _maybe_yaml,
+    _discover_or_prompt_intrinsics,
+    _yes_no_input,
+    _int_input,
 )
+from pickafresa_vision.vision_tools.config_store import load_config, get_namespace, update_namespace
 
 
 def run(args: argparse.Namespace) -> None:
-    intrinsics_path = Path(args.intrinsics)
+    # Intrinsics discovery / prompt
+    intrinsics_path = Path(args.intrinsics) if args.intrinsics else _discover_or_prompt_intrinsics()
     cached_intrinsics_yaml = _maybe_yaml(intrinsics_path)
     camera_matrix, dist_coeffs = load_camera_intrinsics(intrinsics_path)
     world_points: Dict[str, np.ndarray] = {}
+
+    # Persisted config defaults
+    cfg = load_config()
+    ns = get_namespace(cfg, "pnp_calc_manual")
 
     if args.world_points:
         world_points = load_world_points(Path(args.world_points))
     elif cached_intrinsics_yaml.get("world_points"):
         world_points = _extract_world_points(cached_intrinsics_yaml, intrinsics_path)
+    else:
+        if _yes_no_input("Provide a world-points YAML for full PnP (optional)? [y/N]: "):
+            wp = input(f"Enter path to world_points YAML [{ns.get('world_points','')}]: ").strip() or str(ns.get('world_points',''))
+            if wp:
+                try:
+                    world_points = load_world_points(Path(wp))
+                    update_namespace(cfg, "pnp_calc_manual", {"world_points": wp})
+                except Exception as e:
+                    print(f"Could not load world points: {e}")
 
-    sampler = DepthSampler(window=args.depth_window, min_valid=args.min_valid_depth_samples)
+    # Sampler/stream interactive config
+    depth_window = args.depth_window or int(ns.get("depth_window", _int_input("Depth median window (odd) [5]: ", 5)))
+    min_valid = args.min_valid_depth_samples or int(ns.get("min_valid_depth_samples", _int_input("Min valid depth samples [3]: ", 3)))
+    width = args.width or int(ns.get("width", _int_input("Color/Depth width [640]: ", 640)))
+    height = args.height or int(ns.get("height", _int_input("Color/Depth height [480]: ", 480)))
+    fps = args.fps or int(ns.get("fps", _int_input("Stream FPS [30]: ", 30)))
+    max_frames_default = int(ns.get("max_frames", 0))
+    max_frames = args.max_frames if args.max_frames is not None else _int_input("Max frames (0 = infinite) [0]: ", max_frames_default)
+    max_frames = None if max_frames == 0 else max_frames
+    use_ransac = (not args.disable_ransac) if args.disable_ransac is not None else bool(ns.get("use_ransac", _yes_no_input("Use RANSAC for PnP? [Y/n]: ", default=True)))
+
+    # Persist
+    update_namespace(cfg, "pnp_calc_manual", {
+        "depth_window": depth_window,
+        "min_valid_depth_samples": min_valid,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "max_frames": (0 if max_frames is None else max_frames),
+        "use_ransac": use_ransac,
+    })
+
+    sampler = DepthSampler(window=depth_window, min_valid=min_valid)
     label_cycle = build_label_cycle(args, world_points)
     detections: List[Detection] = []
 
@@ -66,10 +106,10 @@ def run(args: argparse.Namespace) -> None:
     else:
         print("No world points provided; PnP will only estimate camera-frame points.")
 
-    with RealSenseStream((args.width, args.height), args.fps) as stream:
+    with RealSenseStream((width, height), fps) as stream:
         print(f"Depth scale: {stream.depth_scale:.6f} meters/unit")
         frame_count = 0
-        while args.max_frames is None or frame_count < args.max_frames:
+        while max_frames is None or frame_count < max_frames:
             color_image, depth_frame = stream.get_aligned_frames()
 
             depths: Dict[int, float] = {}
@@ -96,7 +136,7 @@ def run(args: argparse.Namespace) -> None:
                 image_points,
                 camera_matrix,
                 dist_coeffs,
-                use_ransac=not args.disable_ransac,
+                use_ransac=use_ransac,
             )
             if pose:
                 rvec, tvec, inliers = pose
@@ -112,7 +152,9 @@ def run(args: argparse.Namespace) -> None:
             for idx, point in translations.items():
                 depth_val = depths.get(idx, float("nan"))
                 det = detections[idx]
-                print(f"ROI {idx} ({det.label}): depth={depth_val:.3f} m, camera_point={point}")
+                T = np.eye(4, dtype=np.float32)
+                T[:3, 3] = point
+                print(f"ROI {idx} ({det.label}): depth={depth_val:.3f} m, camera_point={point} \nT_cam_fruit=\n{T}")
 
             vis = annotate_frame(color_image, detections, depths, translations)
             overlay_instructions(vis, detections, args.max_rois)
@@ -183,19 +225,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Manual ROI-based PnP testing using RealSense depth."
     )
-    parser.add_argument("--intrinsics", required=True, help="Path to YAML file with camera_matrix and dist_coeffs.")
+    parser.add_argument("--intrinsics", help="Path to YAML with intrinsics. If omitted, auto-discover or prompt.")
     parser.add_argument("--world-points", help="Optional YAML with world_points for PnP correspondences.")
-    parser.add_argument("--depth-window", type=int, default=5, help="Square window size for depth median sampling.")
+    parser.add_argument("--depth-window", type=int, help="Square window size for depth median sampling.")
     parser.add_argument(
         "--min-valid-depth-samples",
         type=int,
-        default=3,
         dest="min_valid_depth_samples",
         help="Minimum valid depth samples to accept a measurement.",
     )
-    parser.add_argument("--width", type=int, default=640, help="Color/depth stream width.")
-    parser.add_argument("--height", type=int, default=480, help="Color/depth stream height.")
-    parser.add_argument("--fps", type=int, default=30, help="Stream frame rate.")
+    parser.add_argument("--width", type=int, help="Color/depth stream width.")
+    parser.add_argument("--height", type=int, help="Color/depth stream height.")
+    parser.add_argument("--fps", type=int, help="Stream frame rate.")
     parser.add_argument("--max-frames", type=int, help="Optional frame limit for debugging.")
     parser.add_argument(
         "--label-order",
