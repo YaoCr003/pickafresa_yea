@@ -2,7 +2,7 @@ from robolink import *  # API RoboDK
 from robodk import *
 RDK = Robolink()
 RDK.setRunMode(RUNMODE_SIMULATE)
-RDK.setRunMode(RUNMODE_RUN_ROBOT)
+#RDK.setRunMode(RUNMODE_RUN_ROBOT)
 
 
 home_target = RDK.Item('Home', ITEM_TYPE_TARGET)# type: ignore
@@ -12,8 +12,9 @@ T4_target = RDK.Item('Target 4', ITEM_TYPE_TARGET)# type: ignore
 T5_target = RDK.Item('Target 5', ITEM_TYPE_TARGET)# type: ignore
 
 item = RDK.ItemUserPick('UR3e', ITEM_TYPE_ROBOT)# type: ignore
+item.setSpeed(60, 60) 
 
-item.Connect()  # Intenta conexión activa (opcional)
+#item.Connect()  # Intenta conexión activa (opcional)
 
 item.setSpeed(30, 30) 
 if item.Valid():
