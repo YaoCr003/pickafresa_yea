@@ -31,3 +31,11 @@ captures/
 # Large data files
 pickafresa_vision/datasets/*.zip
 pickafresa_vision/datasets/*.tar.gz
+
+# Log files
+*.log
+logs/
+
+# User specific configuration
+pickafresa_vision/.user_config.json
+pickafresa_vision/**/.user_config.json
