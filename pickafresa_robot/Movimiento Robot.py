@@ -3,7 +3,10 @@ from robodk import *
 import paho.mqtt.client as mqtt
 import numpy as np
 import time
+import keyboard
 
+#Variables estado inicial
+actuador_encendido=False
 
 #MQTT
 broker="192.168.9.1"
@@ -15,10 +18,14 @@ client.connect(broker, 1883, 60)
 #Encender o apagar actuador
 def actuador_on():
     client.publish(topic, "1")
+    global actuador_encendido
+    actuador_encendido=True
     print("Actuador encendido")
 
 def actuador_off():
     client.publish(topic, "0")
+    global actuador_encendido
+    actuador_encendido=False
     print("Actuador apagado")
 
 
@@ -72,7 +79,7 @@ Fresa=Mat(fresa_robot.tolist())
 
 #Rutina
 while True:
-    if keyboard.is_pressed("esc"):
+    if keyboard.is_pressed("esc") and actuador_encendido==False:
         print("Ciclo Terminado")
         actuador_off()
         item.MoveJ(home_target)

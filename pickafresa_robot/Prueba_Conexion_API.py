@@ -1,5 +1,7 @@
 from robolink import *  # API RoboDK
 from robodk import *
+import keyboard
+
 RDK = Robolink()
 RDK.setRunMode(RUNMODE_SIMULATE)
 #RDK.setRunMode(RUNMODE_RUN_ROBOT)
@@ -16,15 +18,20 @@ item.setSpeed(60, 60)
 
 #item.Connect()  # Intenta conexión activa (opcional)
 
-item.setSpeed(30, 30) 
-if item.Valid():
-    print('Conectado correctamente con RoboDK.')
-    item.MoveJ(home_target, blocking=False)
-    item.MoveJ(foto_target)
-    item.MoveJ(T5_target)
-    item.MoveJ(T3_target)
-    item.MoveL(T4_target)
-    item.MoveL(T3_target)
-    item.MoveJ(home_target)
-else:
-    print('No se pudo conectar con RoboDK.')
+while True:
+    if keyboard.is_pressed("esc"):
+        item.setSpeed(80, 80) 
+        item.MoveJ(home_target)
+        break
+    if item.Valid():
+        item.setSpeed(80, 80) 
+        print('Conectado correctamente con RoboDK.')
+        item.MoveJ(home_target, blocking=False)
+        item.MoveJ(foto_target)
+        item.MoveJ(T5_target)
+        item.MoveJ(T3_target)
+        item.MoveL(T4_target)
+        item.MoveL(T3_target)
+        item.MoveJ(home_target)
+    else:
+        print('No se pudo conectar con RoboDK.')
