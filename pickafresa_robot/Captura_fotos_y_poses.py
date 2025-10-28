@@ -20,14 +20,14 @@ RDK.setRunMode(RUNMODE_SIMULATE)  # o RUNMODE_RUN_ROBOT si es físico
 robot = RDK.Item(NOMBRE_ROBOT, ITEM_TYPE_ROBOT)
 
 if not robot.Valid():
-    raise Exception("❌ No se encontró el robot en RoboDK.")
+    raise Exception("No se encontró el robot en RoboDK.")
 
 # Inicializar cámara física
 cam = cv2.VideoCapture(CAMERA_INDEX)
 if not cam.isOpened():
-    raise Exception("❌ No se pudo acceder a la cámara física.")
+    raise Exception("No se pudo acceder a la cámara física.")
 
-print("✅ Sistema listo.")
+print("Sistema listo.")
 print("Presiona ENTER para capturar una foto y configuración.")
 print("Presiona ESC para salir.\n")
 
@@ -35,7 +35,7 @@ contador = 1
 while True:
     # Finaliza si se presiona ESC
     if keyboard.is_pressed("esc"):
-        print("\n🛑 Calibración terminada por el usuario.")
+        print("\n Calibración terminada por el usuario.")
         break
 
     # Esperar a que se presione Enter
@@ -64,7 +64,7 @@ while True:
         foto_path = os.path.join(CARPETA_SALIDA, f"{contador}.jpg")
         cv2.imwrite(foto_path, frame)
 
-        print(f"✅ Captura {contador} guardada ({foto_path}, {json_path})")
+        print(f"Captura {contador} guardada ({foto_path}, {json_path})")
         contador += 1
 
 # Liberar cámara
