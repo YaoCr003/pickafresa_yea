@@ -1,21 +1,32 @@
 from robolink import *  # API RoboDK
 from robodk import *
 import keyboard
+import paho.mqtt.client as mqtt
+import numpy as np
+import time
 
 RDK = Robolink()
-RDK.setRunMode(RUNMODE_SIMULATE)
-#RDK.setRunMode(RUNMODE_RUN_ROBOT)
+#RDK.setRunMode(RUNMODE_SIMULATE)
+RDK.setRunMode(RUNMODE_RUN_ROBOT)
+
+broker="192.168.1.114"
+topic="actuador"
+
+client = mqtt.Client()
+client.connect(broker, 1883, 60)
 
 actuador_encendido=False
 
 def actuador_on():
     global actuador_encendido
     actuador_encendido=True
+    client.publish(topic, "Gripper encendido")
     print("Actuador encendido")
 
 def actuador_off():
     global actuador_encendido
     actuador_encendido=False
+    client.publish(topic, "Gripper apagado")
     print("Actuador apagado")
 
 
@@ -28,15 +39,14 @@ T5_target = RDK.Item('Target 5', ITEM_TYPE_TARGET)# type: ignore
 item = RDK.ItemUserPick('UR3e', ITEM_TYPE_ROBOT)# type: ignore
 item.setSpeed(60, 60) 
 
-#item.Connect()  # Intenta conexión activa (opcional)
+item.Connect()  # Intenta conexión activa (opcional)
 
 while True:
-    if keyboard.is_pressed("esc") and not actuador_encendido:
-        item.setSpeed(80, 80) 
-        item.MoveJ(home_target)
+    if keyboard.is_pressed("esc"):
+        print("Programa terminado por usuario")
         break
     if item.Valid():
-        item.setSpeed(80, 80) 
+        item.setSpeed(60, 60) 
         print('Conectado correctamente con RoboDK.')
         item.MoveJ(home_target)
         item.MoveJ(foto_target)
