@@ -19,13 +19,13 @@ client.connect(broker, 1883, 60)
 
 #Encender o apagar actuador
 def actuador_on():
-    client.publish(topic, "1")
+    client.publish(topic, "Gripper encendido")
     global actuador_encendido
     actuador_encendido=True
     print("Actuador encendido")
 
 def actuador_off():
-    client.publish(topic, "0")
+    client.publish(topic, "Gripper apagado")
     global actuador_encendido
     actuador_encendido=False
     print("Actuador apagado")
