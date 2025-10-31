@@ -5,7 +5,7 @@ const int pwmPin = 18;      // Salida PWM
 // --- Controlador PI ---
 float Kp = 2.0;        // Ganancia proporcional
 float Ki = 0.5;        // Ganancia integral
-float setpoint = 50.0; // Presión deseada (ejemplo: 50 psi)
+float setpoint = 70.0; // Presión deseada (ejemplo: 50 kPa)
 
 // --- Variables ---
 float pressure = 0.0;
@@ -39,7 +39,7 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
-  dt = (now - prevTime) / 1000.0; // Tiempo en segundos
+  dt = (now - prevTime) / 10.0; // Tiempo en segundos
   if (dt <= 0) dt = 0.001;
   prevTime = now;
 
