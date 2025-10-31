@@ -39,7 +39,7 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
-  dt = (now - prevTime) / 10.0; // Tiempo en segundos
+  dt = (now - prevTime) / 1000.0; // Tiempo en segundos
   if (dt <= 0) dt = 0.001;
   prevTime = now;
 
@@ -55,6 +55,7 @@ void loop() {
   // --- Calcular PI ---
   error = setpoint - pressure;
   integral += error * dt;
+  integral = constrain(integral, 0, 255 / Ki);
   controlSignal = Kp * error + Ki * integral;
 
   // Limitar PWM
