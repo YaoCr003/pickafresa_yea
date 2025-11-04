@@ -53,17 +53,17 @@ except ImportError:
 # Import profile verification tools for automatic configuration
 if HAVE_REALSENSE:
     try:
-        import sys
-        from pathlib import Path
-        REALSENSE_TESTING_PATH = Path(__file__).resolve().parent.parent / "realsense_testing"
-        if str(REALSENSE_TESTING_PATH) not in sys.path:
-            sys.path.insert(0, str(REALSENSE_TESTING_PATH))
-        from realsense_verify_color import get_best_color_profile, get_camera_serial  # type: ignore
-        from realsense_verify_depth import get_best_depth_profile  # type: ignore
-        from realsense_verify_full import (
-            get_best_full_profile,  # type: ignore
-            get_working_full_profiles,  # type: ignore
-            load_working_profiles,  # type: ignore
+        from pickafresa_vision.realsense_tools.realsense_verify_color import (
+            get_best_color_profile,
+            get_camera_serial,
+        )
+        from pickafresa_vision.realsense_tools.realsense_verify_depth import (
+            get_best_depth_profile,
+        )
+        from pickafresa_vision.realsense_tools.realsense_verify_full import (
+            get_best_full_profile,
+            get_working_full_profiles,
+            load_working_profiles,
         )
         HAVE_VERIFICATION = True
     except ImportError:
@@ -110,6 +110,9 @@ class TestConfig:
     iou_threshold: float = 0.45
     resolution: Tuple[int, int] = (640, 480)
     fps: int = 15
+    # Depth overlay rendering on color window
+    depth_overlay_enabled: bool = False
+    depth_overlay_alpha: float = 0.0  # 0.0 (no overlay) .. 1.0 (full depth colormap)
     # Persisted user preferences for RealSense fps selection (global)
     preferred_color_fps: Optional[int] = None
     preferred_depth_fps: Optional[int] = None
@@ -702,7 +705,9 @@ def draw_overlay_stats(
     camera_info: str,
     conf_threshold: float,
     resolution: Tuple[int, int],
-    paused: bool = False
+    paused: bool = False,
+    depth_overlay_enabled: bool = False,
+    depth_overlay_alpha: float = 0.0,
 ) -> np.ndarray:
     """Draw statistics overlay on the frame."""
     overlay = frame.copy()
@@ -726,6 +731,8 @@ def draw_overlay_stats(
         f"Resolution: {resolution[0]}x{resolution[1]}",
         f"FPS: {fps:.1f}",
         f"Conf Threshold: {conf_threshold:.2f}",
+        (f"Depth Overlay: {'On' if depth_overlay_enabled else 'Off'}"
+         + (f" (alpha={depth_overlay_alpha:.2f})" if depth_overlay_enabled else "")),
         f"Total Detections: {total_detections}",
         "",
         "Per-class counts:",
@@ -742,12 +749,13 @@ def draw_overlay_stats(
         cv2.putText(frame, line, (10, y), font, font_scale, color, thickness, cv2.LINE_AA)
     
     # Draw controls at bottom
-    controls_y = frame.shape[0] - 60
+    controls_y = frame.shape[0] - 75
     cv2.rectangle(frame, (5, controls_y - 5), (frame.shape[1] - 5, frame.shape[0] - 5), (0, 0, 0), -1)
     cv2.addWeighted(frame, 0.6, overlay, 0.4, 0, frame)
     
     control_text = [
         "Controls: [Q]uit | [S]ave | [P]ause | [+/-] Conf | [R]eset",
+        "Overlay: [O] Toggle | [ ] Increase alpha | [ [ ] Decrease alpha",
     ]
     
     for i, line in enumerate(control_text):
@@ -932,6 +940,8 @@ def load_previous_config() -> Optional[TestConfig]:
             iou_threshold=ns.get("iou_threshold", 0.45),
             resolution=tuple(ns.get("resolution", [640, 480])),
             fps=ns.get("fps", 30),
+            depth_overlay_enabled=ns.get("depth_overlay_enabled", False),
+            depth_overlay_alpha=float(ns.get("depth_overlay_alpha", 0.0)),
             preferred_color_fps=ns.get("preferred_color_fps"),
             preferred_depth_fps=ns.get("preferred_depth_fps"),
             preferred_full_profile=preferred_full_profile,
@@ -953,6 +963,8 @@ def save_current_config(test_config: TestConfig):
         "iou_threshold": test_config.iou_threshold,
         "resolution": list(test_config.resolution),
         "fps": test_config.fps,
+        "depth_overlay_enabled": test_config.depth_overlay_enabled,
+        "depth_overlay_alpha": float(test_config.depth_overlay_alpha),
         "preferred_color_fps": test_config.preferred_color_fps,
         "preferred_depth_fps": test_config.preferred_depth_fps,
         "preferred_full_profile": (
@@ -1088,9 +1100,20 @@ def main():
     print("Press 'q' to quit, 's' to save frame, 'p' to pause")
     print("=" * 60 + "\n")
     
-    window_name = "YOLOv11 Object Detection Testing"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    window_name_color = "YOLOv11 - Color (Detections)"
+    window_name_depth = "YOLOv11 - Depth"
+    cv2.namedWindow(window_name_color, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(window_name_depth, cv2.WINDOW_NORMAL)
     
+    # Track last displayed frames for paused mode
+    last_color_frame: Optional[np.ndarray] = None
+    last_depth_frame: Optional[np.ndarray] = None
+    last_fps: float = 0.0
+    last_detections: List = []
+    last_bboxes: List[Tuple[float, float, float, float]] = []
+    last_class_counts: Dict[str, int] = {}
+    camera_info = f"{config.camera_type}:{config.camera_index}" + (" (depth)" if config.enable_depth else "")
+
     try:
         while True:
             # Read frame
@@ -1099,6 +1122,10 @@ def main():
                 print("Failed to read frame from camera")
                 break
             
+            # Prepare visualization frames
+            vis_frame_color = None
+            vis_frame_depth = None
+
             if not paused:
                 # Run inference
                 detections, bboxes = infer(
@@ -1119,20 +1146,24 @@ def main():
                 fps = fps_counter.update()
                 
                 # Draw detections
-                vis_frame = frame.copy()
+                vis_frame_color = frame.copy()
                 if config.enable_depth and depth_frame is not None:
                     depth_scale = camera.depth_scale if hasattr(camera, 'depth_scale') else 0.001
-                    vis_frame = draw_detections(vis_frame, detections, bboxes, class_colors, depth_frame, depth_scale)
+                    vis_frame_color = draw_detections(vis_frame_color, detections, bboxes, class_colors, depth_frame, depth_scale)
                 else:
-                    vis_frame = draw_detections(vis_frame, detections, bboxes, class_colors)
+                    vis_frame_color = draw_detections(vis_frame_color, detections, bboxes, class_colors)
                 
-                # Draw stats overlay
-                camera_info = f"{config.camera_type}:{config.camera_index}"
-                if config.enable_depth:
-                    camera_info += " (depth)"
-                
-                vis_frame = draw_overlay_stats(
-                    vis_frame,
+                # Optional depth overlay blended into color window
+                if config.enable_depth and depth_frame is not None and config.depth_overlay_enabled and config.depth_overlay_alpha > 0.0:
+                    depth_colormap = create_depth_colormap(depth_frame)
+                    if depth_colormap.shape[:2] != vis_frame_color.shape[:2]:
+                        depth_colormap = cv2.resize(depth_colormap, (vis_frame_color.shape[1], vis_frame_color.shape[0]))
+                    alpha = max(0.0, min(1.0, float(config.depth_overlay_alpha)))
+                    vis_frame_color = cv2.addWeighted(vis_frame_color, 1.0 - alpha, depth_colormap, alpha, 0)
+
+                # Draw stats overlay on color window
+                vis_frame_color = draw_overlay_stats(
+                    vis_frame_color,
                     fps,
                     len(detections),
                     class_counts,
@@ -1140,35 +1171,52 @@ def main():
                     camera_info,
                     config.conf_threshold,
                     config.resolution,
-                    paused
+                    paused,
+                    depth_overlay_enabled=config.depth_overlay_enabled and config.enable_depth,
+                    depth_overlay_alpha=float(config.depth_overlay_alpha),
                 )
                 
-                # Show depth colormap alongside if enabled
+                # Prepare depth-only window image (if depth enabled)
                 if config.enable_depth and depth_frame is not None:
-                    depth_colormap = create_depth_colormap(depth_frame)
-                    # Resize to match frame height
-                    h, w = vis_frame.shape[:2]
-                    depth_colormap = cv2.resize(depth_colormap, (w // 2, h))
-                    vis_frame = cv2.resize(vis_frame, (w // 2, h))
-                    vis_frame = np.hstack((vis_frame, depth_colormap))
+                    vis_frame_depth = create_depth_colormap(depth_frame)
+                    # Keep depth window size similar to color window height
+                    if vis_frame_depth.shape[0] != vis_frame_color.shape[0]:
+                        scale_w = int(vis_frame_depth.shape[1] * (vis_frame_color.shape[0] / vis_frame_depth.shape[0]))
+                        vis_frame_depth = cv2.resize(vis_frame_depth, (scale_w, vis_frame_color.shape[0]))
                 
                 frame_count += 1
+
+                # Keep last states for pause display
+                last_color_frame = vis_frame_color.copy() if vis_frame_color is not None else frame.copy()
+                last_depth_frame = vis_frame_depth.copy() if vis_frame_depth is not None else None
+                last_fps = fps
+                last_detections = detections
+                last_bboxes = bboxes
+                last_class_counts = class_counts
             else:
-                # Paused - just show the last frame with pause indicator
-                vis_frame = draw_overlay_stats(
-                    vis_frame,
-                    fps,
-                    len(detections),
-                    class_counts,
+                # Paused - show the last frames with pause indicator
+                if last_color_frame is None:
+                    last_color_frame = frame.copy()
+                vis_frame_color = draw_overlay_stats(
+                    last_color_frame.copy(),
+                    last_fps,
+                    len(last_detections),
+                    last_class_counts,
                     Path(config.model_path).name,
                     camera_info,
                     config.conf_threshold,
                     config.resolution,
-                    paused=True
+                    paused=True,
+                    depth_overlay_enabled=config.depth_overlay_enabled and config.enable_depth,
+                    depth_overlay_alpha=float(config.depth_overlay_alpha),
                 )
+                vis_frame_depth = last_depth_frame.copy() if last_depth_frame is not None else None
             
-            # Display frame
-            cv2.imshow(window_name, vis_frame)
+            # Display frames in separate windows
+            if vis_frame_color is not None:
+                cv2.imshow(window_name_color, vis_frame_color)
+            if config.enable_depth and vis_frame_depth is not None:
+                cv2.imshow(window_name_depth, vis_frame_depth)
             
             # Handle keyboard input
             key = cv2.waitKey(1) & 0xFF
@@ -1182,7 +1230,9 @@ def main():
                 filename = f"objd_test_{timestamp}.jpg"
                 save_path = REPO_ROOT / "pickafresa_vision" / "images" / filename
                 save_path.parent.mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(str(save_path), vis_frame)
+                # Save color window image
+                to_save = vis_frame_color if vis_frame_color is not None else frame
+                cv2.imwrite(str(save_path), to_save)
                 print(f"Frame saved: {filename}")
             elif key == ord('p'):
                 # Toggle pause
@@ -1204,6 +1254,25 @@ def main():
                 config.iou_threshold = 0.45
                 print("Reset to default thresholds")
                 save_current_config(config)
+            elif key == ord('o'):
+                # Toggle depth overlay on color window
+                if config.enable_depth:
+                    config.depth_overlay_enabled = not config.depth_overlay_enabled
+                    state = 'enabled' if config.depth_overlay_enabled else 'disabled'
+                    print(f"Depth overlay {state}")
+                    save_current_config(config)
+            elif key == ord(']'):
+                # Increase overlay alpha
+                if config.enable_depth and config.depth_overlay_enabled:
+                    config.depth_overlay_alpha = min(1.0, float(config.depth_overlay_alpha) + 0.05)
+                    print(f"Overlay alpha: {config.depth_overlay_alpha:.2f}")
+                    save_current_config(config)
+            elif key == ord('['):
+                # Decrease overlay alpha
+                if config.enable_depth and config.depth_overlay_enabled:
+                    config.depth_overlay_alpha = max(0.0, float(config.depth_overlay_alpha) - 0.05)
+                    print(f"Overlay alpha: {config.depth_overlay_alpha:.2f}")
+                    save_current_config(config)
     
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
