@@ -46,6 +46,7 @@ Team YEA, 2025
 
 from __future__ import annotations
 
+import logging
 import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -73,6 +74,21 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Setup logging
+LOG_DIR = REPO_ROOT / "pickafresa_vision" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "pnp_calc.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode='a'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class PoseEstimationResult:
@@ -93,6 +109,7 @@ class PoseEstimationResult:
         depth_samples: Depth values at bbox corners [TL, TR, BR, BL] in meters
         median_depth: Median depth across corners
         depth_variance: Maximum depth variance ratio
+        sampling_strategy: Strategy used for depth sampling (corner/inset/center/bbox_median)
     """
     bbox_cxcywh: Tuple[float, float, float, float]
     confidence: float
@@ -108,11 +125,12 @@ class PoseEstimationResult:
     depth_samples: Optional[List[float]] = None
     median_depth: Optional[float] = None
     depth_variance: Optional[float] = None
+    sampling_strategy: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
         return {
-            "bbox_cxcywh": list(self.bbox_cxcywh),
+            "bbox_cxcywh": [float(v) for v in self.bbox_cxcywh],
             "confidence": float(self.confidence),
             "class_name": self.class_name,
             "class_id": int(self.class_id),
@@ -123,9 +141,10 @@ class PoseEstimationResult:
             "rvec": self.rvec.tolist() if self.rvec is not None else None,
             "tvec": self.tvec.tolist() if self.tvec is not None else None,
             "error_reason": self.error_reason,
-            "depth_samples": self.depth_samples,
-            "median_depth": self.median_depth,
-            "depth_variance": self.depth_variance,
+            "depth_samples": [float(d) for d in self.depth_samples] if self.depth_samples is not None else None,
+            "median_depth": float(self.median_depth) if self.median_depth is not None else None,
+            "depth_variance": float(self.depth_variance) if self.depth_variance is not None else None,
+            "sampling_strategy": self.sampling_strategy,
         }
 
 
@@ -196,6 +215,9 @@ class FruitPoseEstimator:
         if config_path is None:
             config_path = REPO_ROOT / "pickafresa_vision" / "configs" / "pnp_calc_config.yaml"
         
+        logger.info("Initializing FruitPoseEstimator...")
+        logger.info(f"Config path: {config_path}")
+        
         self.config = self._load_config(config_path)
         self.depth_sampler = DepthSampler(
             window_size=self.config.get("depth_sampling", {}).get("window_size", 5),
@@ -203,7 +225,15 @@ class FruitPoseEstimator:
         )
         
         # Build object points for PnP (strawberry corners in its own frame)
-        self.object_points = self._build_object_points()
+        self.object_points_4pt = self._build_object_points_4pt()
+        self.object_points_8pt = self._build_object_points_8pt()
+        
+        # Log configuration
+        use_dual_plane = self.config.get("pnp_solver", {}).get("use_dual_plane", False)
+        logger.info(f"PnP mode: {'8-point dual-plane' if use_dual_plane else '4-point simple'}")
+        logger.info(f"Target classes: {self.config.get('target_classes', ['ripe'])}")
+        logger.info(f"Strawberry dimensions: {self.config.get('strawberry_dimensions', {})}")
+        logger.info("✓ FruitPoseEstimator initialized")
     
     def _load_config(self, config_path: Path) -> Dict[str, Any]:
         """Load configuration from YAML file."""
@@ -229,27 +259,34 @@ class FruitPoseEstimator:
                 "variance_threshold_far": 0.30,
                 "distance_threshold_close": 0.5,
                 "distance_threshold_mid": 2.0,
+                "inset_ratio": 0.15,  # Sample 15% inside from corners
+                "bbox_sample_grid": 10,  # 10x10 grid for bbox median sampling
+                "roi_sample_grid": 20,  # 20x20 grid for ROI nearest depth sampling
             },
             "pnp_solver": {
                 "method": "SOLVEPNP_ITERATIVE",
                 "use_ransac": False,
                 "refinement_iterations": 10,
+                "use_dual_plane": False,  # Use 8-point (true) or 4-point (false) model
             },
             "validation": {
                 "min_confidence": 0.25,
                 "max_depth_meters": 3.0,
-                "min_depth_meters": 0.1,
+                "min_depth_meters": 0.105,  # D435 minimum range (~10cm)
                 "min_bbox_area": 100,
             }
         }
     
-    def _build_object_points(self) -> np.ndarray:
+    def _build_object_points_4pt(self) -> np.ndarray:
         """
-        Build 3D object points for strawberry bbox corners.
+        Build 3D object points for simple 4-point PnP.
+        
+        Creates a single plane of bbox corners at the fruit surface.
+        This is the standard approach for small object pose estimation.
         
         Returns:
             (4, 3) array of corner positions in object frame (meters)
-            Order: [TL, TR, BR, BL] (top-left, top-right, bottom-right, bottom-left)
+            Order: [TL, TR, BR, BL] at Z=0
         """
         dims = self.config.get("strawberry_dimensions", {})
         width_mm = dims.get("width_mm", 32.5)
@@ -260,13 +297,57 @@ class FruitPoseEstimator:
         hh = (height_mm / 2.0) / 1000.0  # half-height
         
         # Define corners in object frame (Z=0 plane, centered at origin)
-        # Clockwise from top-left
         return np.array([
             [-hw, -hh, 0.0],  # Top-left
             [+hw, -hh, 0.0],  # Top-right
             [+hw, +hh, 0.0],  # Bottom-right
             [-hw, +hh, 0.0],  # Bottom-left
         ], dtype=np.float32)
+    
+    def _build_object_points_8pt(self) -> np.ndarray:
+        """
+        Build 3D object points for dual-plane 8-point PnP.
+        
+        Creates two sets of corners:
+        1. Front plane (Z=0): bbox corners at strawberry surface
+        2. Back plane (Z=diameter): bbox corners projected to strawberry depth
+        
+        This provides additional geometric constraints but may not significantly
+        improve accuracy for small objects at typical distances.
+        
+        Returns:
+            (8, 3) array of corner positions in object frame (meters)
+            Order: [Front: TL, TR, BR, BL, Back: TL, TR, BR, BL]
+        """
+        dims = self.config.get("strawberry_dimensions", {})
+        width_mm = dims.get("width_mm", 32.5)
+        height_mm = dims.get("height_mm", 34.3)
+        
+        # Convert to meters
+        hw = (width_mm / 2.0) / 1000.0  # half-width
+        hh = (height_mm / 2.0) / 1000.0  # half-height
+        
+        # Estimate strawberry diameter (use max dimension as approximation)
+        diameter = max(width_mm, height_mm) / 1000.0  # meters
+        
+        # Front plane: bbox corners at strawberry surface (Z=0)
+        front_plane = np.array([
+            [-hw, -hh, 0.0],  # Top-left
+            [+hw, -hh, 0.0],  # Top-right
+            [+hw, +hh, 0.0],  # Bottom-right
+            [-hw, +hh, 0.0],  # Bottom-left
+        ], dtype=np.float32)
+        
+        # Back plane: bbox corners projected to strawberry depth
+        back_plane = np.array([
+            [-hw, -hh, diameter],  # Top-left back
+            [+hw, -hh, diameter],  # Top-right back
+            [+hw, +hh, diameter],  # Bottom-right back
+            [-hw, +hh, diameter],  # Bottom-left back
+        ], dtype=np.float32)
+        
+        # Combine both planes
+        return np.vstack([front_plane, back_plane])
     
     def _cxcywh_to_corners(self, bbox: Tuple[float, float, float, float]) -> np.ndarray:
         """
@@ -288,6 +369,148 @@ class FruitPoseEstimator:
             [cx + hw, cy + hh],  # Bottom-right
             [cx - hw, cy + hh],  # Bottom-left
         ], dtype=np.float32)
+    
+    def _get_inset_corners(
+        self,
+        bbox_cxcywh: Tuple[float, float, float, float],
+        inset_ratio: float = 0.15
+    ) -> np.ndarray:
+        """
+        Get corner positions inset from bbox edges.
+        
+        This samples slightly inside the bbox to avoid edge pixels
+        and background discontinuities.
+        
+        Args:
+            bbox_cxcywh: (center_x, center_y, width, height)
+            inset_ratio: Fraction to inset from edges (0.15 = 15% inset)
+        
+        Returns:
+            (4, 2) array of inset corners [TL, TR, BR, BL]
+        """
+        cx, cy, w, h = bbox_cxcywh
+        # Reduce effective size by inset
+        w_inset = w * (1.0 - 2 * inset_ratio)
+        h_inset = h * (1.0 - 2 * inset_ratio)
+        hw = w_inset / 2.0
+        hh = h_inset / 2.0
+        
+        return np.array([
+            [cx - hw, cy - hh],  # Top-left inset
+            [cx + hw, cy - hh],  # Top-right inset
+            [cx + hw, cy + hh],  # Bottom-right inset
+            [cx - hw, cy + hh],  # Bottom-left inset
+        ], dtype=np.float32)
+    
+    def _sample_bbox_median_depth(
+        self,
+        depth_frame: Any,
+        bbox_cxcywh: Tuple[float, float, float, float],
+        grid_size: int = 10
+    ) -> Optional[float]:
+        """
+        Sample depth across entire bbox using grid sampling.
+        
+        This is a fallback strategy when corner sampling fails.
+        
+        Args:
+            depth_frame: RealSense depth frame
+            bbox_cxcywh: (center_x, center_y, width, height)
+            grid_size: Number of sample points per dimension
+        
+        Returns:
+            Median depth in meters, or None if insufficient samples
+        """
+        cx, cy, w, h = bbox_cxcywh
+        x1 = int(cx - w / 2.0)
+        y1 = int(cy - h / 2.0)
+        x2 = int(cx + w / 2.0)
+        y2 = int(cy + h / 2.0)
+        
+        width = depth_frame.get_width()
+        height = depth_frame.get_height()
+        
+        # Clamp to frame bounds
+        x1 = max(0, min(width - 1, x1))
+        x2 = max(0, min(width - 1, x2))
+        y1 = max(0, min(height - 1, y1))
+        y2 = max(0, min(height - 1, y2))
+        
+        if x2 <= x1 or y2 <= y1:
+            return None
+        
+        # Sample on a grid
+        values: List[float] = []
+        step_x = max(1, (x2 - x1) // grid_size)
+        step_y = max(1, (y2 - y1) // grid_size)
+        
+        for yy in range(y1, y2 + 1, step_y):
+            for xx in range(x1, x2 + 1, step_x):
+                depth = depth_frame.get_distance(int(xx), int(yy))
+                if depth > 0:
+                    values.append(depth)
+        
+        if len(values) < 3:  # Need at least 3 valid samples
+            return None
+        
+        return float(np.median(values))
+    
+    def _sample_roi_nearest_depth(
+        self,
+        depth_frame: Any,
+        bbox_cxcywh: Tuple[float, float, float, float],
+        grid_size: int = 20
+    ) -> Optional[float]:
+        """
+        Sample nearest (minimum) depth within bbox ROI.
+        
+        This is the most robust strategy for fruit detection:
+        - Samples across full bbox area
+        - Uses minimum depth to find fruit surface (ignoring background)
+        - Dense grid sampling for reliability
+        
+        Args:
+            depth_frame: RealSense depth frame
+            bbox_cxcywh: (center_x, center_y, width, height)
+            grid_size: Number of sample points per dimension (higher = more robust)
+        
+        Returns:
+            Minimum valid depth in meters, or None if insufficient samples
+        """
+        cx, cy, w, h = bbox_cxcywh
+        x1 = int(cx - w / 2.0)
+        y1 = int(cy - h / 2.0)
+        x2 = int(cx + w / 2.0)
+        y2 = int(cy + h / 2.0)
+        
+        width = depth_frame.get_width()
+        height = depth_frame.get_height()
+        
+        # Clamp to frame bounds
+        x1 = max(0, min(width - 1, x1))
+        x2 = max(0, min(width - 1, x2))
+        y1 = max(0, min(height - 1, y1))
+        y2 = max(0, min(height - 1, y2))
+        
+        if x2 <= x1 or y2 <= y1:
+            return None
+        
+        # Sample on a dense grid
+        values: List[float] = []
+        step_x = max(1, (x2 - x1) // grid_size)
+        step_y = max(1, (y2 - y1) // grid_size)
+        
+        for yy in range(y1, y2 + 1, step_y):
+            for xx in range(x1, x2 + 1, step_x):
+                depth = depth_frame.get_distance(int(xx), int(yy))
+                if depth > 0:
+                    values.append(depth)
+        
+        if len(values) < 3:  # Need at least 3 valid samples
+            return None
+        
+        # Return minimum depth (nearest point = fruit surface)
+        return float(np.min(values))
     
     def _validate_detection(
         self,
@@ -327,10 +550,92 @@ class FruitPoseEstimator:
     def _sample_corner_depths(
         self,
         depth_frame: Any,
+        bbox_cxcywh: Tuple[float, float, float, float],
         corners_2d: np.ndarray
+    ) -> Tuple[Optional[List[float]], Optional[str], str]:
+        """
+        Adaptive depth sampling with multiple fallback strategies.
+        
+        Strategy priority (most robust to least):
+        1. ROI Nearest: Minimum depth across full bbox (ignores background)
+        2. Inset sampling: Sample 15% inside from corners
+        3. Center fallback: Use bbox center depth for all corners
+        4. Bbox median: Last resort - use grid median across bbox
+        
+        Note: Corner sampling removed - fundamentally flawed when fruit
+        has background at different depth.
+        
+        Args:
+            depth_frame: RealSense depth frame
+            bbox_cxcywh: Bounding box in (cx, cy, w, h) format
+            corners_2d: (4, 2) array of corner positions (kept for inset calculation)
+        
+        Returns:
+            (depths_list, error_message, strategy_used):
+                depths_list is None only if all strategies fail
+        """
+        min_depth = self.config.get("validation", {}).get("min_depth_meters", 0.105)
+        max_depth = self.config.get("validation", {}).get("max_depth_meters", 3.0)
+        
+        logger.debug(f"Depth sampling for bbox {bbox_cxcywh}")
+        
+        # Strategy 1: ROI Nearest Depth (PRIMARY - most robust)
+        roi_grid_size = self.config.get("depth_sampling", {}).get("roi_sample_grid", 20)
+        nearest_depth = self._sample_roi_nearest_depth(depth_frame, bbox_cxcywh, roi_grid_size)
+        
+        if nearest_depth is not None and min_depth <= nearest_depth <= max_depth:
+            # Use nearest depth for all 4 corners (uniform depth model)
+            depths = [nearest_depth] * 4
+            logger.info(f"✓ ROI nearest depth: {nearest_depth:.3f}m")
+            return depths, None, "roi_nearest"
+        else:
+            logger.debug(f"ROI nearest failed: depth={nearest_depth}")
+        
+        # Strategy 2: Inset corner sampling (backup for when ROI fails)
+        inset_ratio = self.config.get("depth_sampling", {}).get("inset_ratio", 0.15)
+        inset_corners = self._get_inset_corners(bbox_cxcywh, inset_ratio)
+        depths, error = self._sample_corner_depths_strategy(
+            depth_frame, inset_corners, "inset"
+        )
+        if depths is not None:
+            return depths, None, "inset"
+        
+        # Strategy 3: Bbox center depth for all corners
+        cx, cy = bbox_cxcywh[0], bbox_cxcywh[1]
+        center_depth = self.depth_sampler.sample(depth_frame, (int(cx), int(cy)))
+        
+        if center_depth is not None and min_depth <= center_depth <= max_depth:
+            # Use center depth for all 4 corners
+            depths = [center_depth] * 4
+            return depths, None, "center"
+        
+        # Strategy 4: Last resort - bbox median depth
+        grid_size = self.config.get("depth_sampling", {}).get("bbox_sample_grid", 10)
+        median_depth = self._sample_bbox_median_depth(depth_frame, bbox_cxcywh, grid_size)
+        
+        if median_depth is not None and min_depth <= median_depth <= max_depth:
+            # Use median depth for all 4 corners
+            depths = [median_depth] * 4
+            return depths, None, "bbox_median"
+        
+        # All strategies failed
+        return None, "all depth sampling strategies failed (roi_nearest/inset/center/bbox_median)", "failed"
+    
+    def _sample_corner_depths_strategy(
+        self,
+        depth_frame: Any,
+        corners_2d: np.ndarray,
+        strategy_name: str
     ) -> Tuple[Optional[List[float]], Optional[str]]:
         """
-        Sample depth at each corner with validation.
+        Sample depth at corners using a specific strategy.
+        
+        Helper method for inset sampling strategy.
+        
+        Args:
+            depth_frame: RealSense depth frame
+            corners_2d: (4, 2) array of corner positions
+            strategy_name: Name of strategy for error messages
         
         Returns:
             (depths_list, error_message): depths_list is None if sampling fails
@@ -341,14 +646,14 @@ class FruitPoseEstimator:
             depth = self.depth_sampler.sample(depth_frame, (int(cx), int(cy)))
             
             if depth is None:
-                return None, f"insufficient valid depth at corner {i}"
+                return None, f"{strategy_name}: insufficient valid depth at corner {i}"
             
             # Validate depth range
-            min_depth = self.config.get("validation", {}).get("min_depth_meters", 0.1)
+            min_depth = self.config.get("validation", {}).get("min_depth_meters", 0.105)
             max_depth = self.config.get("validation", {}).get("max_depth_meters", 3.0)
             
             if depth < min_depth or depth > max_depth:
-                return None, f"depth {depth:.3f}m at corner {i} out of range [{min_depth}, {max_depth}]"
+                return None, f"{strategy_name}: depth {depth:.3f}m at corner {i} out of range [{min_depth}, {max_depth}]"
             
             depths.append(depth)
         
@@ -388,6 +693,83 @@ class FruitPoseEstimator:
         is_valid = max_variance <= threshold
         return is_valid, median_depth, max_variance
     
+    def _build_dual_plane_image_points(
+        self,
+        corners_2d: np.ndarray,
+        depths: List[float],
+        camera_matrix: np.ndarray
+    ) -> np.ndarray:
+        """
+        Build 8 image points for dual-plane PnP using corrected geometry.
+        
+        CORRECTED APPROACH:
+        - Front plane: Bbox corners at measured depth
+        - Back plane: Project corners along camera rays, offset by diameter
+        
+        This ensures geometric consistency: the same rays from camera,
+        just at different depths along those rays.
+        
+        Args:
+            corners_2d: (4, 2) array of corner pixel positions
+            depths: List of 4 depth values (should all be identical with roi_nearest)
+            camera_matrix: 3x3 camera intrinsic matrix
+        
+        Returns:
+            (8, 2) array of image points [Front corners (4), Back corners (4)]
+        """
+        # Use median as the uniform depth
+        uniform_depth = float(np.median(depths))
+        
+        # Get strawberry diameter
+        dims = self.config.get("strawberry_dimensions", {})
+        width_mm = dims.get("width_mm", 32.5)
+        height_mm = dims.get("height_mm", 34.3)
+        diameter = max(width_mm, height_mm) / 1000.0  # meters
+        
+        # Extract intrinsics
+        fx = camera_matrix[0, 0]
+        fy = camera_matrix[1, 1]
+        cx = camera_matrix[0, 2]
+        cy = camera_matrix[1, 2]
+        
+        # Front plane: use original corner positions
+        front_points = corners_2d.copy()
+        
+        # Back plane: project corners along rays from camera center
+        back_points = []
+        for u, v in corners_2d:
+            # Create unit ray from camera center through pixel
+            x_ray = (u - cx) / fx
+            y_ray = (v - cy) / fy
+            z_ray = 1.0
+            
+            # Normalize to unit vector
+            ray_length = np.sqrt(x_ray**2 + y_ray**2 + z_ray**2)
+            ray_unit = np.array([x_ray, y_ray, z_ray]) / ray_length
+            
+            # Front point in 3D camera frame
+            P_front = ray_unit * uniform_depth
+            
+            # Back point: Move diameter distance along the ray
+            # This puts it at depth = uniform_depth + diameter
+            P_back = ray_unit * (uniform_depth + diameter)
+            
+            # Project back point to image plane
+            if P_back[2] > 0:  # Ensure point is in front of camera
+                u_back = fx * P_back[0] / P_back[2] + cx
+                v_back = fy * P_back[1] / P_back[2] + cy
+            else:
+                # Fallback (shouldn't happen with positive depths)
+                u_back = u
+                v_back = v
+            
+            back_points.append([u_back, v_back])
+        
+        back_points = np.array(back_points, dtype=np.float32)
+        
+        # Combine front and back planes
+        return np.vstack([front_points, back_points])
+    
     def _solve_pnp(
         self,
         object_points: np.ndarray,
@@ -421,6 +803,8 @@ class FruitPoseEstimator:
                 confidence = pnp_cfg.get("ransac_confidence", 0.99)
                 iterations = pnp_cfg.get("ransac_iterations", 100)
                 
+                logger.debug(f"Solving PnP with RANSAC (error={reprojection_error}, conf={confidence}, iter={iterations})")
+                
                 success, rvec, tvec, inliers = cv2.solvePnPRansac(
                     object_points,
                     image_points,
@@ -431,8 +815,13 @@ class FruitPoseEstimator:
                     iterationsCount=iterations,
                     flags=method
                 )
+                
+                if success:
+                    logger.debug(f"RANSAC found {len(inliers)} inliers out of {len(object_points)} points")
             else:
                 # Use standard solvePnP
+                logger.debug(f"Solving PnP with method {method_name}")
+                
                 success, rvec, tvec = cv2.solvePnP(
                     object_points,
                     image_points,
@@ -442,11 +831,14 @@ class FruitPoseEstimator:
                 )
             
             if not success:
+                logger.warning("PnP solver failed to converge")
                 return None, None, "PnP solver failed to converge"
             
+            logger.debug(f"PnP converged - tvec: {tvec.flatten()}, rvec: {rvec.flatten()}")
             return rvec, tvec, None
             
         except Exception as e:
+            logger.error(f"PnP solver exception: {str(e)}")
             return None, None, f"PnP solver exception: {str(e)}"
     
     def _build_transform_matrix(
@@ -510,8 +902,8 @@ class FruitPoseEstimator:
         # Convert bbox to corners
         corners_2d = self._cxcywh_to_corners(bbox_cxcywh)
         
-        # Sample depths at corners
-        depths, error = self._sample_corner_depths(depth_frame, corners_2d)
+        # Sample depths at corners with adaptive fallback
+        depths, error, strategy = self._sample_corner_depths(depth_frame, bbox_cxcywh, corners_2d)
         if error:
             return PoseEstimationResult(
                 bbox_cxcywh=bbox_cxcywh,
@@ -520,7 +912,8 @@ class FruitPoseEstimator:
                 class_id=class_id,
                 success=False,
                 error_reason=error,
-                depth_samples=depths
+                depth_samples=depths,
+                sampling_strategy=strategy
             )
         
         # Validate depth consistency
@@ -535,18 +928,41 @@ class FruitPoseEstimator:
                 error_reason=f"depth variance {max_variance:.1%} too high for distance {median_depth:.2f}m",
                 depth_samples=depths,
                 median_depth=median_depth,
-                depth_variance=max_variance
+                depth_variance=max_variance,
+                sampling_strategy=strategy
             )
         
+        # Choose PnP model based on configuration
+        use_dual_plane = self.config.get("pnp_solver", {}).get("use_dual_plane", False)
+        
+        logger.debug(f"Using {'8-point dual-plane' if use_dual_plane else '4-point simple'} PnP model")
+        
+        if use_dual_plane:
+            # Dual-plane 8-point model: More constraints but may not help for small objects
+            image_points = self._build_dual_plane_image_points(
+                corners_2d,
+                depths,
+                camera_matrix
+            )
+            object_points = self.object_points_8pt
+            logger.debug(f"Dual-plane image points shape: {image_points.shape}")
+        else:
+            # Simple 4-point model: Standard approach, recommended for small objects
+            image_points = corners_2d
+            object_points = self.object_points_4pt
+            logger.debug(f"Simple 4-point corners: {corners_2d}")
+        
         # Solve PnP
+        logger.debug(f"Solving PnP with {len(object_points)} correspondences")
         rvec, tvec, error = self._solve_pnp(
-            self.object_points,
-            corners_2d,
+            object_points,
+            image_points,
             camera_matrix,
             dist_coeffs
         )
         
         if error:
+            logger.warning(f"PnP estimation failed: {error}")
             return PoseEstimationResult(
                 bbox_cxcywh=bbox_cxcywh,
                 confidence=confidence,
@@ -556,12 +972,16 @@ class FruitPoseEstimator:
                 error_reason=error,
                 depth_samples=depths,
                 median_depth=median_depth,
-                depth_variance=max_variance
+                depth_variance=max_variance,
+                sampling_strategy=strategy
             )
         
         # Build transformation matrix
         T_cam_fruit, rotation_matrix = self._build_transform_matrix(rvec, tvec)
         position_cam = T_cam_fruit[:3, 3]
+        
+        logger.info(f"✓ Pose estimated for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")
+        logger.debug(f"Rotation matrix:\n{rotation_matrix}")
         
         return PoseEstimationResult(
             bbox_cxcywh=bbox_cxcywh,
@@ -576,7 +996,8 @@ class FruitPoseEstimator:
             tvec=tvec,
             depth_samples=depths,
             median_depth=median_depth,
-            depth_variance=max_variance
+            depth_variance=max_variance,
+            sampling_strategy=strategy
         )
     
     def estimate_poses(

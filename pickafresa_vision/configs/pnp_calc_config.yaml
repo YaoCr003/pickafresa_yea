@@ -1,0 +1,53 @@
+# PnP Calculation Configuration
+# Configuration for fruit pose estimation using OpenCV PnP solver
+# Team YEA, 2025
+
+# Target class filtering for detections
+# Only detections matching these classes will be processed for PnP
+target_classes:
+  - "ripe"
+
+# Strawberry physical dimensions (in millimeters)
+# These dimensions are used to construct the object points for PnP
+strawberry_dimensions:
+  width_mm: 32.5   # Diameter (width) of strawberry
+  height_mm: 34.3  # Height of strawberry
+
+# Depth sampling configuration
+depth_sampling:
+  window_size: 5                    # Odd number: size of neighborhood window for depth median
+  min_valid_samples: 3              # Minimum number of valid depth readings required
+  variance_threshold_close: 0.50    # Variance threshold for depth < 0.5m
+  variance_threshold_mid: 0.40      # Variance threshold for 0.5m ≤ depth < 2.0m
+  variance_threshold_far: 0.30      # Variance threshold for depth ≥ 2.0m
+  distance_threshold_close: 0.5     # Distance in meters defining "close range"
+  distance_threshold_mid: 2.0       # Distance in meters defining "mid range"
+  inset_ratio: 0.15                 # Inset ratio for edge-avoiding corner sampling (15%)
+  bbox_sample_grid: 10              # Grid size for bbox median sampling (10×10)
+  roi_sample_grid: 20               # Grid size for ROI nearest depth sampling (20×20)
+
+# PnP solver configuration
+pnp_solver:
+  method: "SOLVEPNP_ITERATIVE"      # Options: SOLVEPNP_ITERATIVE, SOLVEPNP_P3P, SOLVEPNP_EPNP, SOLVEPNP_IPPE
+  use_ransac: false                 # Whether to use RANSAC for outlier rejection
+  ransac_reprojection_error: 8.0    # RANSAC reprojection error threshold (pixels)
+  ransac_confidence: 0.99           # RANSAC confidence level
+  ransac_iterations: 100            # Maximum RANSAC iterations
+  refinement_iterations: 10         # Refinement iterations for iterative method
+  use_dual_plane: false             # Use 8-point dual-plane model (false = 4-point, recommended)
+
+# Validation thresholds
+validation:
+  min_confidence: 0.25              # Minimum detection confidence to process
+  max_depth_meters: 3.0             # Maximum valid depth reading (meters)
+  min_depth_meters: 0.105           # Minimum valid depth reading (meters) - D435 spec
+  min_bbox_area: 100                # Minimum bounding box area (pixels)
+  max_bbox_area: 250000             # Maximum bounding box area (pixels)
+
+# Output configuration
+output:
+  save_raw_images: true             # Save raw RGB frames
+  save_depth_images: false          # Save colorized depth frames
+  save_annotated_images: true       # Save images with bounding boxes and pose info
+  output_directory: "captures"      # Relative to pickafresa_vision/
+  coordinate_precision: 6           # Decimal places for coordinate values in JSON
