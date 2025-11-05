@@ -13,28 +13,62 @@ To keep API keys and non-public variables private, this folder supports environm
 
 ## Required variables (examples)
 
-- `ROBOFLOW_API_KEY`: Your Roboflow API token
-- Optional defaults for convenience:
   - `ROBOFLOW_WORKSPACE`
   - `ROBOFLOW_PROJECT`
   - `ROBOFLOW_VERSION`
 
 ## How it works
 
-- `pickafresa_vision/config.py` tries to load a `.env` from this folder (or the repo root) if present, using `python-dotenv`.
-- Use `require_env("VAR_NAME")` to fetch required secrets with a clear error if missing.
-- Use `get_env("VAR_NAME", default)` for optional values.
-- The repo `.gitignore` ignores `.env` files so secrets are not committed.
 
 ## macOS zsh tips
 
-- Temporarily export a secret for one command:
   - `ROBOFLOW_API_KEY=... python pickafresa_vision/roboflow/roboflow_model_upload.py`
-- Persist in your shell for current session:
   - `export ROBOFLOW_API_KEY=...`
-- Or use the `.env` file for local dev.
 
 ## CI/CD
 
 - In GitHub Actions or other CI, add secrets in the platform's secret store (e.g., `ROBOFLOW_API_KEY`) and expose them as environment variables to jobs.
+
+## RealSense verification tools (macOS stability)
+
+These scripts live in `pickafresa_vision/realsense_testing/`:
+
+- `realsense_verify_color.py`
+- `realsense_verify_depth.py`
+- `realsense_verify_full.py` (color + depth)
+
+On macOS (Apple Silicon), librealsense pipeline start/stop can occasionally crash due to device-hub power toggles. Our verifiers default to DIRECT sensor mode on macOS, which opens and starts sensors directly with frame queues. You can adjust behavior via environment variables:
+
+- `REALSENSE_COLOR_USE_PIPELINE=1`
+  - Force the color verifier to use the pipeline fallback instead of DIRECT mode.
+
+- `REALSENSE_DEPTH_USE_PIPELINE=1`
+  - Force the depth verifier to use the pipeline fallback instead of DIRECT mode.
+
+- `REALSENSE_FULL_USE_PIPELINE=1`
+  - Force the full verifier (color+depth) to use the pipeline fallback instead of DIRECT mode.
+
+- `REALSENSE_FULL_SWEEP=1`
+  - When cached working profiles exist, bypass the cache and run a fresh verification sweep. If unset, the scripts will prefer cached results and, in interactive terminals, prompt whether to run a full sweep.
+
+Examples (zsh):
+
+```zsh
+# Force pipeline for color script
+REALSENSE_COLOR_USE_PIPELINE=1 ./realsense_venv_sudo pickafresa_vision/realsense_testing/realsense_verify_color.py
+
+# Force pipeline for full script and run a full sweep instead of cache
+REALSENSE_FULL_USE_PIPELINE=1 REALSENSE_FULL_SWEEP=1 ./realsense_venv_sudo pickafresa_vision/realsense_testing/realsense_verify_full.py
+```
+
+Logs for troubleshooting are written to:
+
+- `pickafresa_vision/logs/realsense_color_verify.log`
+- `pickafresa_vision/logs/realsense_depth_verify.log`
+- `pickafresa_vision/logs/realsense_full_verify.log`
+
+Notes:
+
+- DIRECT mode is the default only on macOS. On other platforms, the pipeline path is used.
+- The cache stores known-good profiles per camera serial and speeds up subsequent runs. You can still validate cached profiles explicitly via the library API helpers.
 
