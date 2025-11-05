@@ -41,7 +41,8 @@ Usage:
             print(f"Fruit at {result.position_cam} with confidence {result.confidence}")
             print(f"Transform:\n{result.T_cam_fruit}")
 
-Team YEA, 2025
+by: Aldrick T, 2025 
+for Team YEA
 """
 
 from __future__ import annotations
