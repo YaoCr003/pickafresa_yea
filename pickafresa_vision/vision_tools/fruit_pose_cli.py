@@ -24,7 +24,8 @@ Keyboard Controls:
 Usage:
     python fruit_pose_cli.py [--model MODEL_PATH] [--intrinsics auto|realsense|yaml] [--no-save]
 
-Team YEA, 2025
+by: Aldrick T, 2025 
+for Team YEA
 """
 
 from __future__ import annotations
@@ -37,6 +38,13 @@ from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
+
+try:
+    import yaml
+    HAVE_YAML = True
+except ImportError:
+    HAVE_YAML = False
+    yaml = None  # type: ignore
 
 # Repository root for imports
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -56,7 +64,6 @@ class FruitPoseCLI:
     
     def __init__(
         self,
-        model_path: Path,
         intrinsics_source: str = "auto",
         enable_save: bool = True
     ):
@@ -64,7 +71,6 @@ class FruitPoseCLI:
         Initialize CLI application.
         
         Args:
-            model_path: Path to YOLOv11 model (.pt file)
             intrinsics_source: "auto", "realsense", or "yaml"
             enable_save: Whether to save captures to disk by default
         """
@@ -74,28 +80,39 @@ class FruitPoseCLI:
         print("=" * 70)
         print()
         
-        self.model_path = model_path
+        # Load object detection configuration
+        print("[1/5] Loading object detection configuration...")
+        self.objd_config = self._load_objd_config()
+        self.model_path = self._resolve_model_path(self.objd_config.get("model_path"))
+        print(f"✓ Config loaded: {self.model_path.name}")
+        
         self.intrinsics_source = intrinsics_source
         self.enable_save = enable_save
         self.show_all_detections = False
         self.live_overlay = True  # draw live detection bboxes on preview
-        self.live_conf_threshold = 0.25
+        
+        # Get inference parameters from config
+        inference_cfg = self.objd_config.get("inference", {})
+        self.conf_threshold = inference_cfg.get("confidence", 0.25)
+        self.iou_threshold = inference_cfg.get("iou", 0.45)
+        self.max_detections = inference_cfg.get("max_detections", 300)
+        
         # FPS tracking (EMA)
         self._fps_alpha = 0.12
         self.fps_ema = 0.0
         self._fps_last_time = time.time()
         
         # Initialize components
-        print("[1/4] Loading YOLO model...")
-        self.model = load_model(str(model_path))
-        print(f"✓ Model loaded: {model_path.name}")
+        print("[2/5] Loading YOLO model...")
+        self.model = load_model(str(self.model_path))
+        print(f"✓ Model loaded: {self.model_path.name}")
         
-        print("[2/4] Initializing RealSense camera...")
+        print("[3/5] Initializing RealSense camera...")
         self.camera = RealSenseCapture()
         self.camera.start()
         print("✓ Camera started")
         
-        print("[3/4] Loading camera intrinsics...")
+        print("[4/5] Loading camera intrinsics...")
         
         # If using 'auto' source, validate YAML intrinsics and fallback to RealSense SDK if corrupted
         if intrinsics_source == "auto":
@@ -129,7 +146,7 @@ class FruitPoseCLI:
             print(f"   Try: --intrinsics realsense to force SDK intrinsics")
             print()
         
-        print("[4/4] Initializing pose estimator...")
+        print("[4/5] Initializing pose estimator...")
         self.pose_estimator = FruitPoseEstimator()
         print("✓ Pose estimator ready")
         
@@ -143,9 +160,43 @@ class FruitPoseCLI:
         
         print()
         print("=" * 70)
+        print(f"Inference settings: conf={self.conf_threshold:.2f}, iou={self.iou_threshold:.2f}")
         print("Ready! Press 'h' for help, 'c' to capture, 'q' to quit")
         print("=" * 70)
         print()
+    
+    def _load_objd_config(self) -> dict:
+        """Load object detection configuration from YAML."""
+        config_path = REPO_ROOT / "pickafresa_vision" / "configs" / "objd_config.yaml"
+        
+        if not HAVE_YAML:
+            raise RuntimeError("pyyaml is required. Install with: pip install pyyaml")
+        
+        if not config_path.exists():
+            raise FileNotFoundError(f"Object detection config not found: {config_path}")
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            return config
+        except Exception as e:
+            raise RuntimeError(f"Failed to load object detection config: {e}")
+    
+    def _resolve_model_path(self, model_path_str: Optional[str]) -> Path:
+        """Resolve model path from config (can be relative or absolute)."""
+        if not model_path_str:
+            raise ValueError("model_path not specified in objd_config.yaml")
+        
+        model_path = Path(model_path_str)
+        
+        # If relative, resolve from repo root
+        if not model_path.is_absolute():
+            model_path = (REPO_ROOT / model_path_str).resolve()
+        
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        
+        return model_path
 
     def _bbox_median_depth(self, depth_frame, bbox_xyxy: Tuple[int, int, int, int]) -> Optional[float]:
         """Compute median depth in meters inside bbox (xyxy) on aligned depth_frame."""
@@ -184,7 +235,9 @@ class FruitPoseCLI:
             dets, bboxes_xyxy = infer(
                 self.model,
                 color_image_bgr,
-                conf=self.live_conf_threshold,
+                conf=self.conf_threshold,
+                iou=self.iou_threshold,
+                max_det=self.max_detections,
                 bbox_format="xyxy",
                 normalized=False,
             )
@@ -242,7 +295,7 @@ class FruitPoseCLI:
             f"Model: {self.model_path.name}",
             f"Intrinsics: {self.intrinsics_source}",
             f"Captures: {self.total_captures} | Detections: {self.total_detections} | Poses: {self.total_successful_poses}",
-            f"FPS: {self.fps_ema:.1f} | Live conf: {self.live_conf_threshold:.2f}",
+            f"FPS: {self.fps_ema:.1f} | Conf: {self.conf_threshold:.2f}",
             f"Save: {'ON' if self.enable_save else 'OFF'} | Show All: {'ON' if self.show_all_detections else 'OFF'} | Live BBox: {'ON' if self.live_overlay else 'OFF'}",
             "Press 'c' to capture, 'h' for help, 'q' to quit"
         ]
@@ -268,7 +321,9 @@ class FruitPoseCLI:
         detections, bboxes_cxcywh = infer(
             self.model,
             color_image_bgr,
-            conf=0.25,
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
+            max_det=self.max_detections,
             bbox_format="cxcywh",
             normalized=False
         )
@@ -424,13 +479,13 @@ class FruitPoseCLI:
                     self.live_overlay = not self.live_overlay
                     print(f"Live bbox overlay: {'ON' if self.live_overlay else 'OFF'}")
                 elif key == ord('+') or key == ord('='):
-                    # Increase live confidence threshold
-                    self.live_conf_threshold = min(0.95, round(self.live_conf_threshold + 0.05, 2))
-                    print(f"Live confidence threshold: {self.live_conf_threshold:.2f}")
+                    # Increase confidence threshold
+                    self.conf_threshold = min(0.95, round(self.conf_threshold + 0.05, 2))
+                    print(f"Confidence threshold: {self.conf_threshold:.2f}")
                 elif key == ord('-') or key == ord('_'):
-                    # Decrease live confidence threshold
-                    self.live_conf_threshold = max(0.05, round(self.live_conf_threshold - 0.05, 2))
-                    print(f"Live confidence threshold: {self.live_conf_threshold:.2f}")
+                    # Decrease confidence threshold
+                    self.conf_threshold = max(0.05, round(self.conf_threshold - 0.05, 2))
+                    print(f"Confidence threshold: {self.conf_threshold:.2f}")
                 elif key == ord('h'):
                     self._print_help()
         
@@ -455,38 +510,6 @@ class FruitPoseCLI:
             print()
 
 
-def _discover_models() -> List[Path]:
-    """Discover available YOLO model files."""
-    models_dir = REPO_ROOT / "pickafresa_vision" / "models"
-    if not models_dir.exists():
-        return []
-    return sorted(models_dir.glob("*.pt"))
-
-
-def _prompt_select_model(models: List[Path]) -> Optional[Path]:
-    """Interactively prompt user to select a model."""
-    if not models:
-        print("Error: No .pt model files found in pickafresa_vision/models/")
-        return None
-    
-    print()
-    print("Available Models:")
-    print("-" * 70)
-    for i, model in enumerate(models, 1):
-        print(f"  {i}. {model.name}")
-    print("-" * 70)
-    
-    while True:
-        choice = input(f"Select model [1-{len(models)}]: ").strip()
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(models):
-                return models[idx]
-        except ValueError:
-            pass
-        print(f"Invalid choice. Please enter a number between 1 and {len(models)}.")
-
-
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -495,15 +518,13 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Examples:
   python fruit_pose_cli.py
-  python fruit_pose_cli.py --model path/to/model.pt
-  python fruit_pose_cli.py --intrinsics yaml --no-save
+  python fruit_pose_cli.py --intrinsics yaml
+  python fruit_pose_cli.py --intrinsics realsense --no-save
+
+Configuration:
+  Model and inference parameters are read from:
+    pickafresa_vision/configs/objd_config.yaml
         """
-    )
-    
-    parser.add_argument(
-        "--model",
-        type=Path,
-        help="Path to YOLOv11 model file (.pt). If not specified, will prompt."
     )
     
     parser.add_argument(
@@ -526,18 +547,9 @@ def main() -> int:
     """Main entry point."""
     args = parse_args()
     
-    # Select model
-    model_path = args.model
-    if model_path is None or not model_path.exists():
-        models = _discover_models()
-        model_path = _prompt_select_model(models)
-        if model_path is None:
-            return 1
-    
-    # Run CLI
+    # Run CLI (model is loaded from config)
     try:
         cli = FruitPoseCLI(
-            model_path=model_path,
             intrinsics_source=args.intrinsics,
             enable_save=not args.no_save
         )
