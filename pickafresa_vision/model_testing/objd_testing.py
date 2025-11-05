@@ -87,6 +87,21 @@ from pickafresa_vision.vision_tools.config_store import (
     update_namespace,
 )
 
+
+def _load_objd_config_defaults() -> dict:
+    """Load default values from objd_config.yaml if available."""
+    config_path = REPO_ROOT / "pickafresa_vision" / "configs" / "objd_config.yaml"
+    
+    if not HAVE_YAML or not config_path.exists():
+        return {}
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
 # Configuration namespace for this tool
 CONFIG_NAMESPACE = "objd_testing"
 
@@ -982,6 +997,9 @@ def interactive_setup() -> Optional[TestConfig]:
     models_dir = REPO_ROOT / "pickafresa_vision" / "models"
     datasets_dir = REPO_ROOT / "pickafresa_vision" / "datasets"
     
+    # Load defaults from objd_config.yaml
+    objd_defaults = _load_objd_config_defaults()
+    
     # Check for previous config
     prev_config = load_previous_config()
     if prev_config and Path(prev_config.model_path).exists():
@@ -999,8 +1017,22 @@ def interactive_setup() -> Optional[TestConfig]:
     # New configuration
     print("\n=== New Configuration ===")
     
-    # Model selection
-    model_path = prompt_model_selection(models_dir)
+    # Model selection (with default from objd_config.yaml)
+    default_model = objd_defaults.get("model_path")
+    if default_model:
+        default_model_path = REPO_ROOT / default_model
+        if default_model_path.exists():
+            print(f"\nDefault model from config: {default_model_path.name}")
+            use_default = input("Use this model? (y/n, default=y): ").strip().lower()
+            if use_default != 'n':
+                model_path = default_model_path
+            else:
+                model_path = prompt_model_selection(models_dir)
+        else:
+            model_path = prompt_model_selection(models_dir)
+    else:
+        model_path = prompt_model_selection(models_dir)
+    
     if model_path is None:
         return None
     
@@ -1017,12 +1049,26 @@ def interactive_setup() -> Optional[TestConfig]:
     # Depth mode
     enable_depth = prompt_depth_mode(camera_type)
     
+    # Get default inference parameters from config
+    inference_defaults = objd_defaults.get("inference", {})
+    default_conf = inference_defaults.get("confidence", 0.25)
+    default_iou = inference_defaults.get("iou", 0.45)
+    
+    # Get camera defaults from config
+    camera_defaults = objd_defaults.get("camera", {})
+    default_resolution = tuple(camera_defaults.get("resolution", [640, 480]))
+    default_fps = camera_defaults.get("fps", 30)
+    
     return TestConfig(
         model_path=str(model_path),
         dataset_path=str(dataset_path),
         camera_type=camera_type,
         camera_index=camera_index,
         enable_depth=enable_depth,
+        conf_threshold=default_conf,
+        iou_threshold=default_iou,
+        resolution=default_resolution,
+        fps=default_fps,
     )
 
 
