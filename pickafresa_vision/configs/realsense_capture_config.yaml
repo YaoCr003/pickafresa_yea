@@ -1,6 +1,7 @@
 # RealSense D435 Capture Configuration
 # Configuration for RealSense D400 series camera initialization and frame capture
-# Team YEA, 2025
+# by: Aldrick T, 2025 
+# for Team YEA
 
 # Camera selection
 camera:

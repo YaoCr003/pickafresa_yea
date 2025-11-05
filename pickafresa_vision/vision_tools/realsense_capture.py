@@ -34,7 +34,8 @@ Usage:
     # Cleanup
     camera.stop()
 
-Team YEA, 2025
+by: Aldrick T, 2025 
+for Team YEA
 """
 
 from __future__ import annotations
