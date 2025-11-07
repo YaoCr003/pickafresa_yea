@@ -6,7 +6,7 @@ const PORT = 3000;
 
 // Connection to the database
 const db = mysql.createConnection({
-    host: "10.25.10.153", //Raspberry IP
+    host: "10.25.14.102", //Raspberry IP
     user: "a01275893",
     password: "a01275893",
     database: "fieldMonitor"
