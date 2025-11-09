@@ -1,0 +1,291 @@
+# Robot Pick-and-Place Testing Tool Configuration
+# Team YEA, 2025
+# Configuration for interactive PnP-robot connection testing with RoboDK
+
+# ==============================================================================
+# ROBODK STATION CONFIGURATION
+# ==============================================================================
+robodk:
+  station_file: "pickafresa_robot/rdk/SETUP Fresas.rdk"  # Relative to repo root
+  robot_model: "UR3e"  # Default robot model (can be changed during runtime)
+  run_mode: "simulate"  # Options: "simulate", "real_robot"
+  
+  # Auto-discover targets from RDK station (true = auto, false = use predefined)
+  auto_discover_targets: true
+  
+  # Predefined target names (used if auto_discover fails or as fallback)
+  targets:
+    home: "Home"
+    foto: "Foto"
+    # prepick, pick, and place are dynamically generated based on PnP results
+
+# ==============================================================================
+# COORDINATE TRANSFORMS
+# ==============================================================================
+transforms:
+  # Camera TCP offset from tool flange (as defined in RDK)
+  # Format: [x, y, z]mm | Rot[u, v, w]deg
+  # This represents the camera optical center position relative to the robot flange
+  camera_tcp:
+    translation_mm: [-11.080000, -53.400000, 24.757000]  # [x, y, z] in mm
+    rotation_deg: [-10.00000, 0.000000, 0.000000]         # [u, v, w] in degrees (axis-angle)
+  
+  # Gripper TCP offset from tool flange (as defined in RDK)
+  # This represents the actual gripper TCP position relative to the robot flange
+  gripper_tcp:
+    translation_mm: [0.0, 0.0, 57]
+    rotation_deg: [0.0, 0.0, 0.0]
+  
+  # Offset adjustments for pick point
+  pick_offset:
+    prepick_z_mm: -100.0  # Height offset for pre-pick position (negative = below fruit for harvesting)
+    pick_z_mm: 0.0        # Additional offset at actual pick point
+    place_offset_mm: [0.0, 0.0, 50.0]  # Offset for place position from pick
+
+# ==============================================================================
+# MQTT GRIPPER CONTROL
+# ==============================================================================
+mqtt:
+  enabled: false  # Enable/disable MQTT (can override at runtime)
+  broker_ip: "192.168.1.114"
+  broker_port: 1883
+  keepalive: 60
+  
+  # MQTT Topics
+  topics:
+    command: "actuador/on_off"       # Topic to send gripper commands
+    state_feedback: "actuador/state"  # Topic to receive gripper state
+  
+  # Gripper states
+  states:
+    inflated: "inflado"      # Gripper closed/gripping state
+    deflated: "desinflado"   # Gripper open/released state
+  
+  # State confirmation settings
+  confirmation:
+    enabled: true              # Wait for state confirmation
+    timeout_seconds: 10.0      # Timeout for state confirmation
+    allow_override: true       # Allow user to skip waiting with keypress
+    override_key: "c"          # Key to press to continue without confirmation
+
+# ==============================================================================
+# MOVEMENT & SPEED CONFIGURATION
+# ==============================================================================
+movement:
+  # Speed profiles (percentage of max speed)
+  speed_profiles:
+    turtle:
+      linear_speed: 20   # mm/s or % of max
+      joint_speed: 10    # deg/s or % of max
+      acceleration: 20   # % of max
+    
+    slow:
+      linear_speed: 50
+      joint_speed: 30
+      acceleration: 40
+    
+    normal:
+      linear_speed: 100
+      joint_speed: 60
+      acceleration: 60
+    
+    custom:
+      linear_speed: 75    # User can override these
+      joint_speed: 45
+      acceleration: 50
+  
+  # Default profile to use
+  default_profile: "turtle"  # Options: "turtle", "slow", "normal", "custom"
+  
+  # Movement type preferences
+  move_type:
+    approach: "joint"      # Options: "joint" (MoveJ), "linear" (MoveL)
+    pick: "linear"
+    place: "linear"
+    retract: "joint"
+
+# ==============================================================================
+# PNP DATA SOURCE CONFIGURATION
+# ==============================================================================
+pnp_data:
+  # Source mode: "api" (live FruitPoseEstimator) or "json" (offline file)
+  source_mode: "json"  # Options: "api", "json"
+  
+  # API mode settings (when source_mode = "api")
+  api:
+    vision_config_path: "pickafresa_vision/configs/pnp_calc_config.yaml"
+    objd_config_path: "pickafresa_vision/configs/objd_config.yaml"
+    realsense_config_path: "pickafresa_vision/configs/realsense_capture_config.yaml"
+  
+  # JSON mode settings (when source_mode = "json")
+  json:
+    # Default JSON file to load (relative to repo root)
+    default_file: "pickafresa_vision/captures/20251106_163937_data.json"
+    
+    # Search directory for JSON files (for user selection)
+    search_directory: "pickafresa_vision/captures"
+    
+    # Filter settings
+    min_confidence: 0.5       # Minimum confidence to consider detection
+    prefer_class: "ripe"      # Preferred class if multiple detections
+    
+    # Multi-detection handling
+    auto_select_best: false   # If false, prompt user to select
+    selection_criteria: "confidence"  # Options: "confidence", "closest", "user_select"
+
+# ==============================================================================
+# MOVEMENT SEQUENCE CONFIGURATION
+# ==============================================================================
+sequence:
+  # Execution mode: "yaml" (use predefined), "interactive" (step-by-step prompts)
+  execution_mode: "yaml"  # Options: "yaml", "interactive"
+  
+  # Predefined sequence (when execution_mode = "yaml")
+  steps:
+    - name: "move_home"
+      type: "move"
+      target: "home"
+      move_type: "joint"
+      confirm: true
+      description: "Move to home position"
+    
+    - name: "move_foto"
+      type: "move"
+      target: "foto"
+      move_type: "joint"
+      confirm: true
+      description: "Move to camera/foto position"
+    
+    - name: "capture_pnp"
+      type: "capture"
+      confirm: false
+      description: "Capture and process PnP data (or load from JSON)"
+    
+    - name: "move_prepick"
+      type: "move"
+      target: "prepick"  # Dynamically created from PnP + offset
+      move_type: "joint"
+      confirm: true
+      description: "Move to pre-pick position (above fruit)"
+    
+    - name: "move_pick"
+      type: "move"
+      target: "pick"  # Dynamically created from PnP result
+      move_type: "linear"
+      confirm: true
+      description: "Move to pick position (at fruit)"
+    
+    - name: "gripper_close"
+      type: "gripper"
+      action: "close"
+      confirm: true
+      description: "Activate gripper to grab fruit"
+    
+    - name: "move_prepick_retract"
+      type: "move"
+      target: "prepick"
+      move_type: "linear"
+      confirm: false
+      description: "Retract to pre-pick position"
+    
+    - name: "move_place"
+      type: "move"
+      target: "place"  # Could be home or a specific place position
+      move_type: "joint"
+      confirm: true
+      description: "Move to place position"
+    
+    - name: "gripper_open"
+      type: "gripper"
+      action: "open"
+      confirm: true
+      description: "Release gripper to drop fruit"
+    
+    - name: "move_home_final"
+      type: "move"
+      target: "home"
+      move_type: "joint"
+      confirm: false
+      description: "Return to home position"
+  
+  # Multi-berry handling
+  multi_berry:
+    enabled: false         # Process multiple fruits in sequence
+    max_berries: 5         # Maximum number of berries to process
+    prompt_each: true      # Prompt user before each berry
+
+# ==============================================================================
+# SAFETY & CONFIRMATION SETTINGS
+# ==============================================================================
+safety:
+  # Confirmation requirements
+  confirm_before_movement: true      # Ask before each movement
+  confirm_before_gripper: true       # Ask before gripper actions
+  confirm_sequence_start: true       # Ask before starting full sequence
+  
+  # Emergency stop
+  emergency_stop_key: "esc"          # Key to abort program
+  
+  # Collision detection (RoboDK feature)
+  check_collisions: true
+  
+  # Workspace limits (optional safety bounds in robot base frame, mm)
+  workspace_limits:
+    enabled: false
+    x_min: -500.0
+    x_max: 500.0
+    y_min: -500.0
+    y_max: 500.0
+    z_min: 0.0
+    z_max: 800.0
+
+# ==============================================================================
+# LOGGING CONFIGURATION
+# ==============================================================================
+logging:
+  # Log file settings
+  log_directory: "pickafresa_robot/logs"
+  log_filename_prefix: "robot_pnp"
+  log_level: "INFO"  # Options: "DEBUG", "INFO", "WARN", "ERROR"
+  
+  # Console output
+  console_output: true
+  console_level: "INFO"
+  
+  # ROS2-style formatting
+  format: "[{timestamp}] [{level}] [{node}]: {message}"
+  timestamp_format: "%Y-%m-%d %H:%M:%S.%f"  # Microsecond precision
+  node_name: "robot_pnp_cli"
+
+# ==============================================================================
+# VISUALIZATION SETTINGS
+# ==============================================================================
+visualization:
+  # Create reference frames in RoboDK for debugging
+  create_fruit_frames: true
+  create_prepick_frames: true
+  
+  # Highlight targets before movement
+  highlight_target: true
+  highlight_duration_ms: 500
+  
+  # Frame visualization settings
+  frame_size_mm: 50.0      # Size of coordinate frame axes
+  fruit_frame_color: [255, 0, 0]     # RGB color for fruit frames (red)
+  prepick_frame_color: [0, 255, 0]   # RGB color for prepick frames (green)
+
+# ==============================================================================
+# ADVANCED SETTINGS
+# ==============================================================================
+advanced:
+  # Retry settings
+  max_retries: 3
+  retry_on_collision: true
+  
+  # Validation
+  validate_transforms: true
+  validate_reachability: true  # Check if target is reachable before moving
+  
+  # Debug mode
+  debug_mode: false
+  verbose_logging: false
