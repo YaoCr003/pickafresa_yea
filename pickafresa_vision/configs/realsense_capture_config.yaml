@@ -56,7 +56,7 @@ intrinsics:
                               # auto: Try YAML first, fallback to RealSense
                               # realsense: Always use RealSense SDK intrinsics
                               # yaml: Always use YAML calibration file
-  validate_yaml_match: true   # Validate YAML intrinsics match RealSense (when both available)
+  validate_yaml_match: false   # Validate YAML intrinsics match RealSense (when both available)
   match_tolerance_pixels: 5.0 # Tolerance for intrinsic parameter matching (pixels)
   calibration_directory: "camera_calibration"  # Relative to pickafresa_vision/
   calibration_file_pattern: "calib*.yaml"      # Pattern to match calibration files

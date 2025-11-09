@@ -35,6 +35,10 @@ pnp_solver:
   ransac_iterations: 100            # Maximum RANSAC iterations
   refinement_iterations: 10         # Refinement iterations for iterative method
   use_dual_plane: false             # Use 8-point dual-plane model (false = 4-point, recommended)
+  
+  # Depth constraint configuration (NEW)
+  use_depth_constraint: true        # Use measured depth as initial guess for PnP solver
+  enforce_depth_constraint: true    # Force final Z position to exactly match measured depth
 
 # Validation thresholds
 validation:

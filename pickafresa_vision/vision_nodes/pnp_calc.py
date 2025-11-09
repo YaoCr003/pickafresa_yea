@@ -776,10 +776,20 @@ class FruitPoseEstimator:
         object_points: np.ndarray,
         image_points: np.ndarray,
         camera_matrix: np.ndarray,
-        dist_coeffs: np.ndarray
+        dist_coeffs: np.ndarray,
+        measured_depth: Optional[float] = None,
+        bbox_center: Optional[Tuple[float, float]] = None
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[str]]:
         """
         Solve PnP to get rotation and translation.
+        
+        Args:
+            object_points: 3D object points in object frame
+            image_points: 2D image points in pixel coordinates
+            camera_matrix: 3x3 camera intrinsic matrix
+            dist_coeffs: Distortion coefficients
+            measured_depth: Optional measured depth from sensor (meters)
+            bbox_center: Optional bbox center (cx, cy) for depth constraint initialization
         
         Returns:
             (rvec, tvec, error_message): rvec and tvec are None if solving fails
@@ -787,6 +797,8 @@ class FruitPoseEstimator:
         pnp_cfg = self.config.get("pnp_solver", {})
         method_name = pnp_cfg.get("method", "SOLVEPNP_ITERATIVE")
         use_ransac = pnp_cfg.get("use_ransac", False)
+        use_depth_constraint = pnp_cfg.get("use_depth_constraint", False)
+        enforce_depth_constraint = pnp_cfg.get("enforce_depth_constraint", False)
         
         # Map method name to OpenCV constant
         method_map = {
@@ -797,6 +809,30 @@ class FruitPoseEstimator:
         }
         method = method_map.get(method_name, cv2.SOLVEPNP_ITERATIVE)
         
+        # Prepare initial guess if using depth constraint
+        rvec_init = None
+        tvec_init = None
+        use_extrinsic_guess = False
+        
+        if use_depth_constraint and measured_depth is not None and bbox_center is not None:
+            # Compute 3D position of bbox center at measured depth
+            cx, cy = bbox_center
+            fx = camera_matrix[0, 0]
+            fy = camera_matrix[1, 1]
+            px = camera_matrix[0, 2]
+            py = camera_matrix[1, 2]
+            
+            # Back-project bbox center to 3D at measured depth
+            X = (cx - px) * measured_depth / fx
+            Y = (cy - py) * measured_depth / fy
+            Z = measured_depth
+            
+            tvec_init = np.array([[X], [Y], [Z]], dtype=np.float32)
+            rvec_init = np.zeros((3, 1), dtype=np.float32)  # Identity rotation
+            use_extrinsic_guess = True
+            
+            logger.debug(f"Using depth constraint: initial tvec=[{X:.4f}, {Y:.4f}, {Z:.4f}]")
+        
         try:
             if use_ransac:
                 # Use solvePnPRansac
@@ -806,6 +842,7 @@ class FruitPoseEstimator:
                 
                 logger.debug(f"Solving PnP with RANSAC (error={reprojection_error}, conf={confidence}, iter={iterations})")
                 
+                # Note: RANSAC doesn't support useExtrinsicGuess parameter
                 success, rvec, tvec, inliers = cv2.solvePnPRansac(
                     object_points,
                     image_points,
@@ -821,19 +858,37 @@ class FruitPoseEstimator:
                     logger.debug(f"RANSAC found {len(inliers)} inliers out of {len(object_points)} points")
             else:
                 # Use standard solvePnP
-                logger.debug(f"Solving PnP with method {method_name}")
+                logger.debug(f"Solving PnP with method {method_name}, use_guess={use_extrinsic_guess}")
                 
-                success, rvec, tvec = cv2.solvePnP(
-                    object_points,
-                    image_points,
-                    camera_matrix,
-                    dist_coeffs,
-                    flags=method
-                )
+                if use_extrinsic_guess:
+                    success, rvec, tvec = cv2.solvePnP(
+                        object_points,
+                        image_points,
+                        camera_matrix,
+                        dist_coeffs,
+                        rvec=rvec_init,
+                        tvec=tvec_init,
+                        useExtrinsicGuess=True,
+                        flags=method
+                    )
+                else:
+                    success, rvec, tvec = cv2.solvePnP(
+                        object_points,
+                        image_points,
+                        camera_matrix,
+                        dist_coeffs,
+                        flags=method
+                    )
             
             if not success:
                 logger.warning("PnP solver failed to converge")
                 return None, None, "PnP solver failed to converge"
+            
+            # Enforce depth constraint if enabled
+            if enforce_depth_constraint and measured_depth is not None:
+                original_z = tvec[2, 0]
+                tvec[2, 0] = measured_depth
+                logger.debug(f"Enforced depth constraint: Z {original_z:.4f}m → {measured_depth:.4f}m (Δ={abs(original_z - measured_depth)*1000:.1f}mm)")
             
             logger.debug(f"PnP converged - tvec: {tvec.flatten()}, rvec: {rvec.flatten()}")
             return rvec, tvec, None
@@ -953,13 +1008,17 @@ class FruitPoseEstimator:
             object_points = self.object_points_4pt
             logger.debug(f"Simple 4-point corners: {corners_2d}")
         
-        # Solve PnP
+        # Solve PnP with optional depth constraint
         logger.debug(f"Solving PnP with {len(object_points)} correspondences")
+        bbox_center = (bbox_cxcywh[0], bbox_cxcywh[1])  # Extract (cx, cy)
+        
         rvec, tvec, error = self._solve_pnp(
             object_points,
             image_points,
             camera_matrix,
-            dist_coeffs
+            dist_coeffs,
+            measured_depth=median_depth,
+            bbox_center=bbox_center
         )
         
         if error:
