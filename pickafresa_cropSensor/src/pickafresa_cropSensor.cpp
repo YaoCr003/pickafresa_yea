@@ -490,6 +490,7 @@ void setup() {
 
 
 void loop() {
+  unsigned long currentTime = millis();
   // Raw substate sensor readings
   int substrateHumid0 = analogRead(shs0Pin);
   int substrateHumid1 = analogRead(shs1Pin);
