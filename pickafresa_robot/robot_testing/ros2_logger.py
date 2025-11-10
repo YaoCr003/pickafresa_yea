@@ -11,7 +11,6 @@ Features:
 - Microsecond timestamp precision
 
 by: Aldrick T, 2025
-for Team YEA
 """
 
 import logging
@@ -41,7 +40,8 @@ class ROS2StyleLogger:
         log_file: Optional[Path] = None,
         console_level: str = "INFO",
         file_level: str = "DEBUG",
-        timestamp_format: str = "%Y-%m-%d %H:%M:%S.%f"
+        timestamp_format: str = "%Y-%m-%d %H:%M:%S.%f",
+        overwrite_log: bool = True
     ):
         """
         Initialize ROS2-style logger.
@@ -52,6 +52,7 @@ class ROS2StyleLogger:
             console_level: Logging level for console output
             file_level: Logging level for file output
             timestamp_format: Format string for timestamps
+            overwrite_log: If True, overwrite log file on start; if False, append
         """
         self.node_name = node_name
         self.timestamp_format = timestamp_format
@@ -71,7 +72,8 @@ class ROS2StyleLogger:
         # File handler with ROS2 formatting (no colors)
         if log_file:
             log_file.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+            file_mode = 'w' if overwrite_log else 'a'  # 'w' = overwrite, 'a' = append
+            file_handler = logging.FileHandler(log_file, mode=file_mode, encoding='utf-8')
             file_handler.setLevel(getattr(logging, file_level.upper()))
             file_handler.setFormatter(self._create_file_formatter())
             self.logger.addHandler(file_handler)
@@ -145,7 +147,9 @@ def create_logger(
     log_dir: Optional[Path] = None,
     log_prefix: str = "robot_pnp",
     console_level: str = "INFO",
-    file_level: str = "DEBUG"
+    file_level: str = "DEBUG",
+    use_timestamp: bool = False,
+    overwrite_log: bool = True
 ) -> ROS2StyleLogger:
     """
     Factory function to create a ROS2-style logger.
@@ -156,6 +160,8 @@ def create_logger(
         log_prefix: Prefix for log filename
         console_level: Console logging level
         file_level: File logging level
+        use_timestamp: If True, add timestamp to filename; if False, use fixed name
+        overwrite_log: If True, overwrite log on start; if False, append
     
     Returns:
         Configured ROS2StyleLogger instance
@@ -164,14 +170,20 @@ def create_logger(
     if log_dir:
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = log_dir / f"{log_prefix}_{timestamp}.log"
+        
+        if use_timestamp:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = log_dir / f"{log_prefix}_{timestamp}.log"
+        else:
+            # Fixed log filename (will be overwritten on each run if overwrite_log=True)
+            log_file = log_dir / f"{log_prefix}.log"
     
     return ROS2StyleLogger(
         node_name=node_name,
         log_file=log_file,
         console_level=console_level,
-        file_level=file_level
+        file_level=file_level,
+        overwrite_log=overwrite_log
     )
 
 

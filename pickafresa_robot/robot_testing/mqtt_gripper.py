@@ -102,13 +102,13 @@ class MQTTGripperController:
         """Callback when connected to MQTT broker."""
         if rc == 0:
             self.is_connected = True
-            self._log_info(f"✓ Connected to MQTT broker at {self.broker_ip}:{self.broker_port}")
+            self._log_info(f"[OK] Connected to MQTT broker at {self.broker_ip}:{self.broker_port}")
             # Subscribe to state topic
             client.subscribe(self.state_topic)
-            self._log_info(f"✓ Subscribed to topic: {self.state_topic}")
+            self._log_info(f"[OK] Subscribed to topic: {self.state_topic}")
         else:
             self.is_connected = False
-            self._log_error(f"✗ Failed to connect to MQTT broker (code: {rc})")
+            self._log_error(f"[FAIL] Failed to connect to MQTT broker (code: {rc})")
     
     def _on_disconnect(self, client, userdata, rc):
         """Callback when disconnected from MQTT broker."""
@@ -241,7 +241,7 @@ class MQTTGripperController:
             # Check for state match
             with self.state_lock:
                 if self.current_state == desired_state:
-                    self._log_info(f"✓ Gripper state confirmed: '{desired_state}'")
+                    self._log_info(f"[OK] Gripper state confirmed: '{desired_state}'")
                     return True
             
             # Check for override keypress
@@ -259,7 +259,7 @@ class MQTTGripperController:
             time.sleep(0.1)
         
         # Timeout
-        self._log_error(f"✗ Timeout waiting for state '{desired_state}' (waited {timeout}s)")
+        self._log_error(f"[FAIL] Timeout waiting for state '{desired_state}' (waited {timeout}s)")
         return False
     
     def get_current_state(self) -> Optional[str]:

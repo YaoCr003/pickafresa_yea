@@ -68,7 +68,7 @@ class FruitDetection:
         self.position_base: Optional[np.ndarray] = None
     
     def __repr__(self) -> str:
-        status = "✓" if self.success else "✗"
+        status = "[OK]" if self.success else "[FAIL]"
         if self.position_cam is not None:
             pos_str = f"[{self.position_cam[0]:.3f}, {self.position_cam[1]:.3f}, {self.position_cam[2]:.3f}]m"
         else:
