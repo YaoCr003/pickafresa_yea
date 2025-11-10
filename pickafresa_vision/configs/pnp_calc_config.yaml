@@ -1,17 +1,45 @@
 # PnP Calculation Configuration
 # Configuration for fruit pose estimation using OpenCV PnP solver
-# Team YEA, 2025
+
+# @aldrick-t, 2025
 
 # Target class filtering for detections
 # Only detections matching these classes will be processed for PnP
 target_classes:
   - "ripe"
 
+# Camera mounting configuration
+# These parameters account for camera orientation relative to robot TCP
+camera_mounting:
+  pitch_deg: -10.0    # Camera pitch angle (negative = tilted down, positive = tilted up)
+  roll_deg: 0.0       # Camera roll angle (rotation around optical axis)
+  yaw_deg: 0.0        # Camera yaw angle (pan left/right)
+
 # Strawberry physical dimensions (in millimeters)
 # These dimensions are used to construct the object points for PnP
 strawberry_dimensions:
   width_mm: 32.5   # Diameter (width) of strawberry
   height_mm: 34.3  # Height of strawberry
+
+# Multi-frame detection averaging
+# Reduces bbox detection uncertainty and x-axis offset through temporal filtering
+multi_frame_averaging:
+  enabled: false                    # Enable multi-frame averaging (recommended for accuracy)
+  num_frames: 10                    # Number of frames to capture and average
+  outlier_rejection: "iqr"          # Method: "iqr", "std_dev", or "ransac"
+  iqr_multiplier: 1.5               # IQR multiplier for outlier detection (1.5 = standard)
+  std_dev_threshold: 2.0            # Standard deviation threshold (if using std_dev method)
+  
+  # Detection tracking across frames
+  tracking:
+    iou_threshold: 0.3              # IoU threshold for matching detections across frames
+    min_frames_visible: 5           # Minimum frames a detection must appear in
+    
+  # Overlapping detection handling
+  overlap_handling:
+    iou_merge_threshold: 0.7        # If IoU > this, merge detections
+    iou_separate_threshold: 0.3     # If IoU < this, treat as separate detections
+    merge_method: "weighted_avg"    # How to merge: "weighted_avg", "highest_conf", "largest_bbox"
 
 # Depth sampling configuration
 depth_sampling:
@@ -36,9 +64,10 @@ pnp_solver:
   refinement_iterations: 10         # Refinement iterations for iterative method
   use_dual_plane: false             # Use 8-point dual-plane model (false = 4-point, recommended)
   
-  # Depth constraint configuration (NEW)
+  # Depth constraint configuration
   use_depth_constraint: true        # Use measured depth as initial guess for PnP solver
-  enforce_depth_constraint: true    # Force final Z position to exactly match measured depth
+  enforce_depth_constraint: true   # DISABLED: Let PnP solve freely using geometric constraints
+                                    # Setting to true forces Z to measured depth (pinhole behavior)
 
 # Validation thresholds
 validation:
