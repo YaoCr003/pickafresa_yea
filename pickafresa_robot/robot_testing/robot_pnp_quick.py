@@ -13,8 +13,7 @@ Modes:
     - real-json: Real robot with JSON data (requires confirmation)
     - real-api: Real robot with live camera (requires confirmation)
 
-by: Aldrick T, 2025
-for Team YEA
+# @aldrick-t, 2025
 """
 
 import sys
@@ -73,13 +72,11 @@ def main():
     mode_info = mode_configs[args.mode]
     
     # Display mode information
-    print("\n" + "="*70)
-    print(f" QUICK START MODE: {mode_info['name']}")
-    print("="*70)
+    print("\nQUICK START MODE: " + mode_info['name'])
     
     # Safety confirmation for real robot modes
     if not mode_info['safe']:
-        print("\n⚠️  WARNING: This mode will control the REAL ROBOT! ⚠️")
+        print("\n[WARNING] This mode will control the REAL ROBOT!")
         print("   Ensure:")
         print("   - Robot is properly connected and powered")
         print("   - Workspace is clear of obstacles")
@@ -90,7 +87,7 @@ def main():
         response = input("Are you SURE you want to continue? Type 'YES' to proceed: ").strip()
         
         if response != 'YES':
-            print("\n❌ Operation cancelled for safety.")
+            print("\n[ERROR] Operation cancelled for safety.")
             return 1
     
     # Run the tool
