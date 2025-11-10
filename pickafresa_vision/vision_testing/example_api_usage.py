@@ -235,7 +235,7 @@ def run_live(config: dict, json_out: Optional[Path]) -> None:
             # Check if we have any successful pose estimations
             successful_results = [r for r in results if r.success]
             if successful_results:
-                print(f"\n✓ Successfully estimated {len(successful_results)} pose(s)!")
+                print(f"\n[OK] Successfully estimated {len(successful_results)} pose(s)!")
                 
                 # Save results to default captures folder if json_out not specified
                 if json_out is None:
@@ -247,7 +247,7 @@ def run_live(config: dict, json_out: Optional[Path]) -> None:
                 json_out.parent.mkdir(parents=True, exist_ok=True)
                 with open(json_out, "w", encoding="utf-8") as f:
                     json.dump(payload, f, indent=2)
-                print(f"✓ Saved JSON results -> {json_out}")
+                print(f"[OK] Saved JSON results -> {json_out}")
                 
                 break  # Exit loop on success
             else:

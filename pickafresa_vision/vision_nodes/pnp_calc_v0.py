@@ -1010,7 +1010,7 @@ class RealSenseStream:
                     self.selected_profile = selected
                     self.resolution = (width, height)
                     self.fps = color_fps
-                    print(f"✓ Selected profile: Color {width}x{height}@{color_fps} | Depth {dw}x{dh}@{depth_fps}")
+                    print(f"[OK] Selected profile: Color {width}x{height}@{color_fps} | Depth {dw}x{dh}@{depth_fps}")
                     
                     # Save selected profile as preference
                     try:
@@ -1032,7 +1032,7 @@ class RealSenseStream:
                         self.selected_profile = pair
                         self.resolution = (width, height)
                         self.fps = color_fps
-                        print(f"✓ Detected profile: Color {width}x{height}@{color_fps} | Depth {dw}x{dh}@{depth_fps}")
+                        print(f"[OK] Detected profile: Color {width}x{height}@{color_fps} | Depth {dw}x{dh}@{depth_fps}")
                 except Exception:
                     pass
 
@@ -1063,7 +1063,7 @@ class RealSenseStream:
                     if device_serial:
                         config.enable_device(device_serial)
                         if attempt == 0:
-                            print(f"✓ Binding to device: {device_serial}")
+                            print(f"[OK] Binding to device: {device_serial}")
             except Exception:
                 pass
 
@@ -1083,7 +1083,7 @@ class RealSenseStream:
                     time.sleep(1.5)  # Longer delay for hardware reset
 
                 profile = self.pipeline.start(config)
-                print(f"✓ RealSense pipeline started successfully")
+                print(f"[OK] RealSense pipeline started successfully")
                 break
             except RuntimeError as e:
                 last_error = e
@@ -1170,7 +1170,7 @@ class RealSenseStream:
         if self.pipeline:
             try:
                 self.pipeline.stop()
-                print("✓ RealSense pipeline stopped")
+                print("[OK] RealSense pipeline stopped")
             except Exception as e:
                 print(f"⚠ Error stopping pipeline: {e}")
             

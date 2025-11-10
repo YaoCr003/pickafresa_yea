@@ -56,11 +56,11 @@ class CameraCalibration:
             choice = input("\nEnter choice (1 or 2): ").strip()
             if choice == "1":
                 self.pattern_type = "checkerboard"
-                print("✓ Selected: Checkerboard pattern\n")
+                print("[OK] Selected: Checkerboard pattern\n")
                 break
             elif choice == "2":
                 self.pattern_type = "circular"
-                print("✓ Selected: Circular grid pattern\n")
+                print("[OK] Selected: Circular grid pattern\n")
                 break
             else:
                 print("Invalid choice. Please enter 1 or 2.")
@@ -96,8 +96,8 @@ class CameraCalibration:
                 except ValueError:
                     print("Invalid input. Please enter a number.")
             
-            print(f"\n✓ Pattern: {self.pattern_size[0]}x{self.pattern_size[1]} checkerboard")
-            print(f"✓ Square size: {self.square_size} mm\n")
+            print(f"\n[OK] Pattern: {self.pattern_size[0]}x{self.pattern_size[1]} checkerboard")
+            print(f"[OK] Square size: {self.square_size} mm\n")
             
         else:  # circular
             print("Circular Grid Pattern Configuration")
@@ -138,9 +138,9 @@ class CameraCalibration:
                 except ValueError:
                     print("Invalid input. Please enter a number.")
             
-            print(f"\n✓ Pattern: {self.pattern_size[0]}x{self.pattern_size[1]} circular grid")
-            print(f"✓ Circle diameter: {self.circle_diameter} mm")
-            print(f"✓ Circle spacing: {self.circle_spacing} mm\n")
+            print(f"\n[OK] Pattern: {self.pattern_size[0]}x{self.pattern_size[1]} circular grid")
+            print(f"[OK] Circle diameter: {self.circle_diameter} mm")
+            print(f"[OK] Circle spacing: {self.circle_spacing} mm\n")
     
     def select_image_source(self):
         """Select source of calibration images"""
@@ -186,7 +186,7 @@ class CameraCalibration:
                 
                 if image_files:
                     self.image_dir = path
-                    print(f"✓ Found {len(image_files)} images in directory\n")
+                    print(f"[OK] Found {len(image_files)} images in directory\n")
                     break
                 else:
                     print("No JPG or PNG images found in directory. Please try another path.")
@@ -204,7 +204,7 @@ class CameraCalibration:
         print("\nStarting RealSense camera...")
         try:
             cam = camera_capture.get_camera(camera_type='realsense', resolution=(640, 640))
-            print("✓ Camera started successfully\n")
+            print("[OK] Camera started successfully\n")
             print("Instructions:")
             print("  - Press SPACE to capture an image")
             print("  - Press 'q' to finish and proceed with calibration")
@@ -224,10 +224,10 @@ class CameraCalibration:
                     img_count += 1
                     filename = calib_dir / f"calib_{img_count:03d}.png"
                     cv2.imwrite(str(filename), frame)
-                    print(f"✓ Captured image {img_count}: {filename.name}")
+                    print(f"[OK] Captured image {img_count}: {filename.name}")
                 elif key == ord('q'):
                     if img_count >= 10:
-                        print(f"\n✓ Captured {img_count} images")
+                        print(f"\n[OK] Captured {img_count} images")
                         break
                     else:
                         print(f"\nWarning: Only {img_count} images captured.")
@@ -236,7 +236,7 @@ class CameraCalibration:
                         if confirm == 'y':
                             break
         except Exception as e:
-            print(f"\n✗ Error: {e}")
+            print(f"\n[FAIL] Error: {e}")
             print("Make sure RealSense camera is connected.")
             raise
         finally:
@@ -262,8 +262,8 @@ class CameraCalibration:
         
         if self.images:
             self.image_size = (self.images[0][1].shape[1], self.images[0][1].shape[0])
-            print(f"✓ Loaded {len(self.images)} images")
-            print(f"✓ Image size: {self.image_size[0]}x{self.image_size[1]}\n")
+            print(f"[OK] Loaded {len(self.images)} images")
+            print(f"[OK] Image size: {self.image_size[0]}x{self.image_size[1]}\n")
         else:
             raise ValueError("No valid images found!")
     
@@ -299,10 +299,10 @@ class CameraCalibration:
                     self.object_points.append(objp)
                     self.image_points.append(corners)
                     successful_images += 1
-                    print(f"✓ {os.path.basename(img_file)}")
+                    print(f"[OK] {os.path.basename(img_file)}")
                 else:
                     failed_images.append(img_file)
-                    print(f"✗ {os.path.basename(img_file)} - Pattern not found")
+                    print(f"[FAIL] {os.path.basename(img_file)} - Pattern not found")
             
             else:  # circular
                 # Use SimpleBlobDetector for circular grids
@@ -325,10 +325,10 @@ class CameraCalibration:
                     self.object_points.append(objp)
                     self.image_points.append(corners)
                     successful_images += 1
-                    print(f"✓ {os.path.basename(img_file)}")
+                    print(f"[OK] {os.path.basename(img_file)}")
                 else:
                     failed_images.append(img_file)
-                    print(f"✗ {os.path.basename(img_file)} - Pattern not found")
+                    print(f"[FAIL] {os.path.basename(img_file)} - Pattern not found")
         
         print("-" * 70)
         print(f"\nPattern detection complete:")
@@ -338,7 +338,7 @@ class CameraCalibration:
             print(f"  Failed images: {len(failed_images)}")
         
         if successful_images < 10:
-            print("\n⚠ Warning: Less than 10 successful images.")
+            print("\n[WARNING] Warning: Less than 10 successful images.")
             print("  Calibration quality may be poor.")
             confirm = input("Continue with calibration? (y/n): ").strip().lower()
             if confirm != 'y':
@@ -373,17 +373,17 @@ class CameraCalibration:
         
         mean_error = total_error / len(self.object_points)
         
-        print("✓ Calibration successful!")
+        print("[OK] Calibration successful!")
         print(f"  Mean reprojection error: {mean_error:.4f} pixels")
         
         if mean_error > 1.0:
-            print("  ⚠ Warning: High reprojection error (>1.0 pixel)")
+            print("  [WARNING] Warning: High reprojection error (>1.0 pixel)")
             print("  Consider recalibrating with better images.\n")
         elif mean_error > 0.5:
             print("  ℹ Note: Moderate reprojection error")
             print("  Calibration is acceptable but could be improved.\n")
         else:
-            print("  ✓ Excellent calibration quality!\n")
+            print("  [OK] Excellent calibration quality!\n")
         
         return mtx, dist, mean_error
     
@@ -459,7 +459,7 @@ class CameraCalibration:
         with open(output_file, 'w') as f:
             yaml.dump(calibration_data, f, default_flow_style=False, sort_keys=False)
         
-        print(f"✓ Calibration data saved to:")
+        print(f"[OK] Calibration data saved to:")
         print(f"  {output_file}\n")
         
         # Print summary
@@ -499,7 +499,7 @@ class CameraCalibration:
         except KeyboardInterrupt:
             print("\n\nCalibration cancelled by user.")
         except Exception as e:
-            print(f"\n✗ Error: {e}")
+            print(f"\n[FAIL] Error: {e}")
             import traceback
             traceback.print_exc()
 

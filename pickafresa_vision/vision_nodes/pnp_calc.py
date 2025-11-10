@@ -41,8 +41,7 @@ Usage:
             print(f"Fruit at {result.position_cam} with confidence {result.confidence}")
             print(f"Transform:\n{result.T_cam_fruit}")
 
-by: Aldrick T, 2025 
-for Team YEA
+# @aldrick-t, 2025
 """
 
 from __future__ import annotations
@@ -234,7 +233,7 @@ class FruitPoseEstimator:
         logger.info(f"PnP mode: {'8-point dual-plane' if use_dual_plane else '4-point simple'}")
         logger.info(f"Target classes: {self.config.get('target_classes', ['ripe'])}")
         logger.info(f"Strawberry dimensions: {self.config.get('strawberry_dimensions', {})}")
-        logger.info("✓ FruitPoseEstimator initialized")
+        logger.info("[OK] FruitPoseEstimator initialized")
     
     def _load_config(self, config_path: Path) -> Dict[str, Any]:
         """Load configuration from YAML file."""
@@ -285,6 +284,10 @@ class FruitPoseEstimator:
         Creates a single plane of bbox corners at the fruit surface.
         This is the standard approach for small object pose estimation.
         
+        IMPORTANT: This method accounts for camera mounting rotation to ensure
+        accurate PnP results. The camera is mounted with a pitch angle relative
+        to the robot TCP, which must be compensated during PnP solving.
+        
         Returns:
             (4, 3) array of corner positions in object frame (meters)
             Order: [TL, TR, BR, BL] at Z=0
@@ -298,12 +301,37 @@ class FruitPoseEstimator:
         hh = (height_mm / 2.0) / 1000.0  # half-height
         
         # Define corners in object frame (Z=0 plane, centered at origin)
-        return np.array([
+        # Object frame: strawberry with Z-axis pointing away from camera
+        corners = np.array([
             [-hw, -hh, 0.0],  # Top-left
             [+hw, -hh, 0.0],  # Top-right
             [+hw, +hh, 0.0],  # Bottom-right
             [-hw, +hh, 0.0],  # Bottom-left
         ], dtype=np.float32)
+        
+        # Apply camera mounting rotation compensation
+        # The camera is mounted with a pitch angle relative to the robot TCP.
+        # This rotation must be accounted for so that PnP solver gets the correct
+        # geometric relationship between image points and 3D object points.
+        camera_pitch_deg = self.config.get("camera_mounting", {}).get("pitch_deg", 0.0)
+        
+        if abs(camera_pitch_deg) > 0.01:  # Only apply if non-zero
+            logger.debug(f"Applying camera mounting pitch compensation: {camera_pitch_deg}°")
+            
+            # Rotation around X-axis (pitch)
+            # Positive pitch = camera tilted down (looking downward)
+            # We need to rotate object points in the opposite direction
+            pitch_rad = np.deg2rad(camera_pitch_deg)
+            R_x = np.array([
+                [1.0, 0.0, 0.0],
+                [0.0, np.cos(pitch_rad), -np.sin(pitch_rad)],
+                [0.0, np.sin(pitch_rad), np.cos(pitch_rad)]
+            ], dtype=np.float32)
+            
+            # Apply rotation to each corner
+            corners = (R_x @ corners.T).T
+        
+        return corners
     
     def _build_object_points_8pt(self) -> np.ndarray:
         """
@@ -346,6 +374,23 @@ class FruitPoseEstimator:
             [+hw, +hh, diameter],  # Bottom-right back
             [-hw, +hh, diameter],  # Bottom-left back
         ], dtype=np.float32)
+        
+        # Apply camera mounting rotation compensation
+        camera_pitch_deg = self.config.get("camera_mounting", {}).get("pitch_deg", 0.0)
+        
+        if abs(camera_pitch_deg) > 0.01:  # Only apply if non-zero
+            logger.debug(f"Applying camera mounting pitch compensation to 8-point model: {camera_pitch_deg}°")
+            
+            pitch_rad = np.deg2rad(camera_pitch_deg)
+            R_x = np.array([
+                [1.0, 0.0, 0.0],
+                [0.0, np.cos(pitch_rad), -np.sin(pitch_rad)],
+                [0.0, np.sin(pitch_rad), np.cos(pitch_rad)]
+            ], dtype=np.float32)
+            
+            # Apply rotation to both planes
+            front_plane = (R_x @ front_plane.T).T
+            back_plane = (R_x @ back_plane.T).T
         
         # Combine both planes
         return np.vstack([front_plane, back_plane])
@@ -587,7 +632,7 @@ class FruitPoseEstimator:
         if nearest_depth is not None and min_depth <= nearest_depth <= max_depth:
             # Use nearest depth for all 4 corners (uniform depth model)
             depths = [nearest_depth] * 4
-            logger.info(f"✓ ROI nearest depth: {nearest_depth:.3f}m")
+            logger.info(f"[OK] ROI nearest depth: {nearest_depth:.3f}m")
             return depths, None, "roi_nearest"
         else:
             logger.debug(f"ROI nearest failed: depth={nearest_depth}")
@@ -1040,7 +1085,7 @@ class FruitPoseEstimator:
         T_cam_fruit, rotation_matrix = self._build_transform_matrix(rvec, tvec)
         position_cam = T_cam_fruit[:3, 3]
         
-        logger.info(f"✓ Pose estimated for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")
+        logger.info(f"[OK] Pose estimated for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")
         logger.debug(f"Rotation matrix:\n{rotation_matrix}")
         
         return PoseEstimationResult(

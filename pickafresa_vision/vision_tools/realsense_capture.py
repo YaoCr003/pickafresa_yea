@@ -34,8 +34,7 @@ Usage:
     # Cleanup
     camera.stop()
 
-by: Aldrick T, 2025 
-for Team YEA
+# @aldrick-t, 2025
 """
 
 from __future__ import annotations
@@ -367,7 +366,7 @@ class RealSenseCapture:
                 
                 self.is_running = True
                 self.consecutive_failures = 0
-                self.logger.info("✓ RealSense camera started successfully")
+                self.logger.info("[OK] RealSense camera started successfully")
                 return
                 
             except Exception as e:
@@ -612,7 +611,7 @@ class RealSenseCapture:
             self.logger.warning(f"Intrinsics mismatch detected: {mismatches}")
             self.logger.warning("YAML intrinsics may be outdated. Consider recalibration.")
         else:
-            self.logger.info("✓ YAML and RealSense intrinsics match within tolerance")
+            self.logger.info("[OK] YAML and RealSense intrinsics match within tolerance")
     
     def save_raw_image(self, color_image: np.ndarray, output_path: Path) -> None:
         """
@@ -664,7 +663,7 @@ if __name__ == "__main__":
     print("Testing RealSense capture...")
     try:
         color, depth, intr = capture_single_frame()
-        print(f"✓ Captured frame: {color.shape}")
-        print(f"✓ Intrinsics: fx={intr.fx:.2f}, fy={intr.fy:.2f}, cx={intr.cx:.2f}, cy={intr.cy:.2f}")
+        print(f"[OK] Captured frame: {color.shape}")
+        print(f"[OK] Intrinsics: fx={intr.fx:.2f}, fy={intr.fy:.2f}, cx={intr.cx:.2f}, cy={intr.cy:.2f}")
     except Exception as e:
-        print(f"✗ Test failed: {e}")
+        print(f"[FAIL] Test failed: {e}")

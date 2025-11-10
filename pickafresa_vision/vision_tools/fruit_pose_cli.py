@@ -24,8 +24,7 @@ Keyboard Controls:
 Usage:
     python fruit_pose_cli.py [--model MODEL_PATH] [--intrinsics auto|realsense|yaml] [--no-save]
 
-by: Aldrick T, 2025 
-for Team YEA
+# @aldrick-t, 2025
 """
 
 from __future__ import annotations
@@ -84,7 +83,7 @@ class FruitPoseCLI:
         print("[1/5] Loading object detection configuration...")
         self.objd_config = self._load_objd_config()
         self.model_path = self._resolve_model_path(self.objd_config.get("model_path"))
-        print(f"✓ Config loaded: {self.model_path.name}")
+        print(f"[OK] Config loaded: {self.model_path.name}")
         
         self.intrinsics_source = intrinsics_source
         self.enable_save = enable_save
@@ -105,12 +104,12 @@ class FruitPoseCLI:
         # Initialize components
         print("[2/5] Loading YOLO model...")
         self.model = load_model(str(self.model_path))
-        print(f"✓ Model loaded: {self.model_path.name}")
+        print(f"[OK] Model loaded: {self.model_path.name}")
         
         print("[3/5] Initializing RealSense camera...")
         self.camera = RealSenseCapture()
         self.camera.start()
-        print("✓ Camera started")
+        print("[OK] Camera started")
         
         print("[4/5] Loading camera intrinsics...")
         
@@ -121,25 +120,25 @@ class FruitPoseCLI:
                 yaml_intrinsics = self.camera.get_intrinsics(source="yaml")
                 # Validate: D435 should have fx/fy in range 600-900
                 if yaml_intrinsics.fx > 2000 or yaml_intrinsics.fy > 2000 or yaml_intrinsics.fx < 400 or yaml_intrinsics.fy < 400:
-                    print(f"⚠️  YAML intrinsics seem corrupted (fx={yaml_intrinsics.fx:.1f}, fy={yaml_intrinsics.fy:.1f})")
+                    print(f"[WARNING]  YAML intrinsics seem corrupted (fx={yaml_intrinsics.fx:.1f}, fy={yaml_intrinsics.fy:.1f})")
                     print("   Falling back to RealSense SDK intrinsics...")
                     self.intrinsics = self.camera.get_intrinsics(source="realsense")
                 else:
                     self.intrinsics = yaml_intrinsics
             except Exception as e:
-                print(f"⚠️  Failed to load YAML intrinsics: {e}")
+                print(f"[WARNING]  Failed to load YAML intrinsics: {e}")
                 print("   Falling back to RealSense SDK intrinsics...")
                 self.intrinsics = self.camera.get_intrinsics(source="realsense")
         else:
             # Explicit source requested
             self.intrinsics = self.camera.get_intrinsics(source=intrinsics_source)
         
-        print(f"✓ Intrinsics loaded (fx={self.intrinsics.fx:.2f}, fy={self.intrinsics.fy:.2f})")
+        print(f"[OK] Intrinsics loaded (fx={self.intrinsics.fx:.2f}, fy={self.intrinsics.fy:.2f})")
         
         # Final validation warning
         if self.intrinsics.fx > 2000 or self.intrinsics.fy > 2000:
             print()
-            print("⚠️  WARNING: Intrinsics still seem incorrect!")
+            print("[WARNING]  WARNING: Intrinsics still seem incorrect!")
             print(f"   fx={self.intrinsics.fx:.1f}, fy={self.intrinsics.fy:.1f}")
             print(f"   Expected range for D435: fx/fy ≈ 600-900")
             print(f"   This will cause incorrect pose estimation!")
@@ -148,7 +147,7 @@ class FruitPoseCLI:
         
         print("[4/5] Initializing pose estimator...")
         self.pose_estimator = FruitPoseEstimator()
-        print("✓ Pose estimator ready")
+        print("[OK] Pose estimator ready")
         
         # Data saver
         self.data_saver = DataSaver()
@@ -353,7 +352,7 @@ class FruitPoseCLI:
         successful = [r for r in results if r.success]
         failed = [r for r in results if not r.success]
         
-        print(f"✓ Successful: {len(successful)} | ✗ Failed: {len(failed)}")
+        print(f"[OK] Successful: {len(successful)} | [FAIL] Failed: {len(failed)}")
         print()
         
         # Print successful poses

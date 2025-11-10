@@ -378,7 +378,7 @@ class RealSenseCamera:
                     if selected:
                         (color_w, color_h, color_fps), (depth_w, depth_h, depth_fps) = selected
                         print(
-                            f"✓ Selected: Color {color_w}x{color_h}@{color_fps} | "
+                            f"[OK] Selected: Color {color_w}x{color_h}@{color_fps} | "
                             f"Depth {depth_w}x{depth_h}@{depth_fps}"
                         )
                         self.resolution = (color_w, color_h)
@@ -403,7 +403,7 @@ class RealSenseCamera:
                         best_color = get_best_color_profile(verbose=True, use_cache=True, validate_cached=False)
                         if best_color:
                             color_w, color_h, color_fps = best_color
-                            print(f"✓ Color: {color_w}x{color_h}@{color_fps}")
+                            print(f"[OK] Color: {color_w}x{color_h}@{color_fps}")
                             self.resolution = (color_w, color_h)
                             self.fps = color_fps
 
@@ -411,7 +411,7 @@ class RealSenseCamera:
                         best_depth = get_best_depth_profile(verbose=True, use_cache=True, validate_cached=False)
                         if best_depth:
                             dw, dh, dfps = best_depth
-                            print(f"✓ Depth: {dw}x{dh}@{dfps}")
+                            print(f"[OK] Depth: {dw}x{dh}@{dfps}")
                             self.depth_resolution = (dw, dh)
                             self.depth_fps = dfps
                 else:
@@ -420,7 +420,7 @@ class RealSenseCamera:
                     best_color = get_best_color_profile(verbose=True, use_cache=True, validate_cached=False)
                     if best_color:
                         color_w, color_h, color_fps = best_color
-                        print(f"✓ Selected color profile: {color_w}x{color_h}@{color_fps}fps")
+                        print(f"[OK] Selected color profile: {color_w}x{color_h}@{color_fps}fps")
                         self.resolution = (color_w, color_h)
                         self.fps = color_fps
             except Exception as e:

@@ -366,7 +366,7 @@ class DataSaver:
             _, path = self.save_metadata(results, intrinsics, color_image, model_path, timestamp, extra_data)
             saved_files.append(path.name)
         
-        print(f"✓ Saved {len(saved_files)} files to captures/:")
+        print(f"[OK] Saved {len(saved_files)} files to captures/:")
         for filename in saved_files:
             print(f"  - {filename}")
         
