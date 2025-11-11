@@ -17,12 +17,20 @@ for Team YEA
 
 import time
 import threading
+import platform
 from typing import Optional, Callable
 import paho.mqtt.client as mqtt
 
+# Keyboard library requires root/admin on macOS and causes threading errors
+# Disable on macOS to avoid OSError: Error 13 - Must be run as administrator
+IS_MACOS = platform.system() == "Darwin"
+
 try:
     import keyboard
-    HAVE_KEYBOARD = True
+    # Disable keyboard on macOS due to permission requirements
+    HAVE_KEYBOARD = not IS_MACOS
+    if IS_MACOS:
+        print("Info: Keyboard override functionality disabled on macOS (requires sudo)")
 except ImportError:
     HAVE_KEYBOARD = False
     print("Warning: 'keyboard' module not available. Override functionality disabled.")
@@ -244,17 +252,29 @@ class MQTTGripperController:
                     self._log_info(f"[OK] Gripper state confirmed: '{desired_state}'")
                     return True
             
-            # Check for override keypress
+            # Check for override keypress (with error handling for macOS keyboard issues)
             if allow_override and HAVE_KEYBOARD:
-                if keyboard.is_pressed(override_key):
-                    self._log_warn(f"State confirmation overridden by user (key: '{override_key}')")
-                    time.sleep(0.2)  # Debounce
-                    return True
+                try:
+                    if keyboard.is_pressed(override_key):
+                        self._log_warn(f"State confirmation overridden by user (key: '{override_key}')")
+                        time.sleep(0.2)  # Debounce
+                        return True
+                except (ValueError, OSError) as e:
+                    # Keyboard library may fail on macOS (requires root/has key mapping issues)
+                    # Disable further keyboard checks to avoid repeated errors
+                    if allow_override:
+                        self._log_warn(f"Keyboard input disabled (macOS limitation): {e}")
+                        allow_override = False
             
-            # Check for emergency stop
-            if HAVE_KEYBOARD and keyboard.is_pressed("esc"):
-                self._log_error("Emergency stop detected (ESC pressed)")
-                return False
+            # Check for emergency stop (with error handling)
+            if HAVE_KEYBOARD:
+                try:
+                    if keyboard.is_pressed("esc"):
+                        self._log_error("Emergency stop detected (ESC pressed)")
+                        return False
+                except (ValueError, OSError):
+                    # Silently ignore keyboard errors for emergency stop
+                    pass
             
             time.sleep(0.1)
         

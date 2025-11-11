@@ -134,7 +134,7 @@ multi_stage_capture:
   # Stage 3: Prepick refinement - capture from prepick position
   
   stage2_alignment:
-    enabled: false                    # Enable 2nd capture (berry alignment)
+    enabled: true                    # Enable 2nd capture (berry alignment)
     center_tolerance_px: 10.0         # Pixel tolerance for centering (if within this, skip stage 2)
     adjust_orientation: true          # Adjust orientation to align camera Z-axis with berry Z-axis
     
@@ -182,7 +182,7 @@ multi_stage_capture:
 # COLLISION AVOIDANCE
 # ==============================================================================
 collision_avoidance:
-  enabled: true                       # Enable collision checking (recommended)
+  enabled: false                       # Enable collision checking (recommended)
   check_before_move: true             # Check collision before executing move
   fallback_strategies:                # Strategies to try when collision detected (in order)
     - "try_linear"                    # Try MoveL instead of MoveJ
@@ -243,7 +243,7 @@ mqtt:
   # State confirmation settings
   confirmation:
     enabled: true              # Wait for state confirmation
-    timeout_seconds: 10.0      # Timeout for state confirmation
+    timeout_seconds: 30.0      # Timeout for state confirmation
     allow_override: true       # Allow user to skip waiting with keypress
     override_key: "c"          # Key to press to continue without confirmation
 
@@ -305,7 +305,7 @@ vision_service:
 # ==============================================================================
 pnp_data:
   # Source mode: "vision" (vision service), "api" (live direct), "json" (offline file)
-  source_mode: "vision"  # Options: "vision", "api", "json"
+  source_mode: "json"  # Options: "vision", "api", "json"
   
   # API mode settings (when source_mode = "api")
   api:
