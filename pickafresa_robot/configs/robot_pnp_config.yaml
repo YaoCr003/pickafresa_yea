@@ -18,6 +18,8 @@ robodk:
   targets:
     home: "Home"
     foto: "Foto"
+    target_3: "Target 3"
+    target_4: "Target 4"
     prepick_plane: Prepick_plane
     # Alignment approach targets for stage 2 capture
     alignment_approach1: "Alignment_Approach1"
