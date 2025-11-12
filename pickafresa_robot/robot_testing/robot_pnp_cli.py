@@ -21,6 +21,7 @@ Usage:
 
 import sys
 import time
+import platform
 import argparse
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -47,9 +48,14 @@ except ImportError:
     HAVE_YAML = False
     yaml = None
 
+# Keyboard library requires root/admin on macOS and causes threading errors
+# Disable on macOS to avoid OSError: Error 13 - Must be run as administrator
+IS_MACOS = platform.system() == "Darwin"
+
 try:
     import keyboard
-    HAVE_KEYBOARD = True
+    # Disable keyboard on macOS due to permission requirements
+    HAVE_KEYBOARD = not IS_MACOS
 except ImportError:
     HAVE_KEYBOARD = False
 
@@ -1136,21 +1142,9 @@ class RobotPnPCLI:
             # Convert to FruitDetection objects
             detections = []
             for det_data in detections_data:
-                # Extract data
-                class_name = det_data.get('class_name', 'unknown')
-                confidence = det_data.get('confidence', 0.0)
-                bbox = det_data.get('bbox', [0, 0, 0, 0])
-                T_cam_fruit = np.array(det_data.get('T_cam_fruit', np.eye(4).tolist()))
-                T_base_fruit = np.array(det_data.get('T_base_fruit', np.eye(4).tolist()))
-                
-                # Create FruitDetection object
-                fruit = FruitDetection(
-                    class_name=class_name,
-                    confidence=confidence,
-                    bbox=bbox,
-                    T_cam_fruit=T_cam_fruit,
-                    T_base_fruit=T_base_fruit
-                )
+                # FruitDetection expects a dictionary, not keyword arguments
+                # Create FruitDetection object by passing the dict directly
+                fruit = FruitDetection(det_data)
                 detections.append(fruit)
             
             self.logger.info(f"[OK] Received {len(detections)} detection(s) from vision service")
@@ -2008,14 +2002,14 @@ class RobotPnPCLI:
         collision_enabled = collision_config.get('enabled', True)
         if collision_enabled:
             success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
-                f"alignment_{berry_label}", "joint", confirm, True,
+                f"alignment_{berry_label}", "linear", confirm, True,
                 enable_collision_avoidance=True, collision_config=collision_config
             )
             if not success:
                 self.logger.error(f"Failed to reach alignment position: {message}")
                 return None
         else:
-            if not self.robodk_manager.move_to_target(f"alignment_{berry_label}", "joint", confirm, True):
+            if not self.robodk_manager.move_to_target(f"alignment_{berry_label}", "linear", confirm, True):
                 return None
         
         # Capture new detection at alignment position

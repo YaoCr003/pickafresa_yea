@@ -20,6 +20,7 @@ Features:
 
 import time
 import struct
+import platform
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import numpy as np
@@ -32,9 +33,14 @@ except ImportError:
     HAVE_ROBODK = False
     print("Warning: RoboDK Python API not available. Install with: pip install robodk")
 
+# Keyboard library requires root/admin on macOS and causes threading errors
+# Disable on macOS to avoid OSError: Error 13 - Must be run as administrator
+IS_MACOS = platform.system() == "Darwin"
+
 try:
     import keyboard
-    HAVE_KEYBOARD = True
+    # Disable keyboard on macOS due to permission requirements
+    HAVE_KEYBOARD = not IS_MACOS
 except ImportError:
     HAVE_KEYBOARD = False
 
