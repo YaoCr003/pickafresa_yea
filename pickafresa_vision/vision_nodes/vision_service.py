@@ -641,6 +641,15 @@ class VisionService:
         try:
             # Get camera intrinsics
             intrinsics = self.camera.get_intrinsics()
+            
+            # Sanity check: Validate intrinsics are reasonable for RealSense D435
+            # fx/fy should typically be 400-2000 pixels for this camera model
+            if intrinsics.fx > 2000 or intrinsics.fy > 2000 or intrinsics.fx < 400 or intrinsics.fy < 400:
+                logger.warning(f"Intrinsics seem invalid (fx={intrinsics.fx:.1f}, fy={intrinsics.fy:.1f})")
+                logger.warning("Likely corrupted calibration file. Forcing RealSense SDK intrinsics...")
+                intrinsics = self.camera.get_intrinsics(source="realsense")
+                logger.info(f"Using SDK intrinsics: fx={intrinsics.fx:.1f}, fy={intrinsics.fy:.1f}")
+            
             camera_matrix = intrinsics.to_matrix()
             dist_coeffs = intrinsics.distortion_coeffs
             

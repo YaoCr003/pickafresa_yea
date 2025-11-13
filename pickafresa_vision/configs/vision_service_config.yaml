@@ -11,7 +11,7 @@ service:
   auto_start: true                # Auto-start with robot CLI
   port: 5555                      # IPC socket port for communication
   host: "localhost"               # Service host
-  timeout_sec: 30.0               # Timeout for capture requests
+  timeout_sec: 2000              # Timeout for capture requests
   
   # Reconnection settings for RealSense pipeline
   reconnect:

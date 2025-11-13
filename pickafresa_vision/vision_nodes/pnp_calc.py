@@ -7,7 +7,7 @@ using bounding box corners, RealSense depth data, and OpenCV's PnP solver.
 Key Pipeline:
 1. Take RGB+Depth aligned frame (from realsense_capture)
 2. Get detections with bounding boxes (from inference_bbox in cxcywh format)
-3. Sample depth at bbox corners using median filtering
+3. Sample depth at bbox using configurable strategy (closest/center/offset variants)
 4. Validate depth consistency across corners
 5. Solve PnP using known strawberry dimensions and bbox corners
 6. Return 4x4 homogeneous transformation matrix (Camera → Fruit frame)
@@ -15,6 +15,11 @@ Key Pipeline:
 Features:
 - Multi-detection processing (sorted by confidence)
 - Configurable class filtering (default: "ripe" only)
+- Configurable depth output strategies:
+  * "closest": Minimum depth from ROI (finds fruit surface)
+  * "center": Depth at ROI center
+  * "closest_offset": Minimum depth + 0.5× strawberry width (deeper)
+  * "center_offset": Center depth + 0.4× strawberry width (deeper)
 - Adaptive depth variance thresholds based on distance
 - Comprehensive error reporting with failure reasons
 - JSON-serializable results for data logging
@@ -598,18 +603,23 @@ class FruitPoseEstimator:
         depth_frame: Any,
         bbox_cxcywh: Tuple[float, float, float, float],
         corners_2d: np.ndarray
-    ) -> Tuple[Optional[List[float]], Optional[str], str]:
+    ) -> Tuple[Optional[List[float]], Optional[str], str, float]:
         """
-        Adaptive depth sampling with multiple fallback strategies.
+        Adaptive depth sampling with configurable output strategies.
         
-        Strategy priority (most robust to least):
-        1. ROI Nearest: Minimum depth across full bbox (ignores background)
-        2. Inset sampling: Sample 15% inside from corners
-        3. Center fallback: Use bbox center depth for all corners
-        4. Bbox median: Last resort - use grid median across bbox
+        Primary strategies (configurable via output_strategy in config):
+        - "closest": Minimum depth across full bbox (finds fruit surface, ignores background)
+        - "center": Depth at bbox center point
+        - "closest_offset": Minimum depth + 0.5× strawberry width (pushes deeper into fruit)
+        - "center_offset": Center depth + 0.4× strawberry width (deeper from center)
         
-        Note: Corner sampling removed - fundamentally flawed when fruit
-        has background at different depth.
+        Fallback strategies (if primary fails):
+        1. Inset sampling: Sample 15% inside from corners
+        2. Center fallback: Use bbox center depth for all corners
+        3. Bbox median: Last resort - use grid median across bbox
+        
+        NOTE: When enforce_depth_constraint=true (pinhole mode), the offset is applied
+        AFTER PnP solving to only affect Z. Otherwise, offset affects initial guess.
         
         Args:
             depth_frame: RealSense depth frame
@@ -617,55 +627,136 @@ class FruitPoseEstimator:
             corners_2d: (4, 2) array of corner positions (kept for inset calculation)
         
         Returns:
-            (depths_list, error_message, strategy_used):
-                depths_list is None only if all strategies fail
+            (depths_list, error_message, strategy_used, depth_offset):
+                - depths_list: Raw depths without offset (for PnP solving)
+                - error_message: Error if sampling failed
+                - strategy_used: Name of strategy that succeeded
+                - depth_offset: Offset to apply after PnP (0.0 if no offset)
         """
         min_depth = self.config.get("validation", {}).get("min_depth_meters", 0.105)
         max_depth = self.config.get("validation", {}).get("max_depth_meters", 3.0)
         
         logger.debug(f"Depth sampling for bbox {bbox_cxcywh}")
         
-        # Strategy 1: ROI Nearest Depth (PRIMARY - most robust)
-        roi_grid_size = self.config.get("depth_sampling", {}).get("roi_sample_grid", 20)
-        nearest_depth = self._sample_roi_nearest_depth(depth_frame, bbox_cxcywh, roi_grid_size)
+        # Get configured output strategy
+        ds_cfg = self.config.get("depth_sampling", {})
+        output_strategy = ds_cfg.get("output_strategy", "closest")
         
-        if nearest_depth is not None and min_depth <= nearest_depth <= max_depth:
-            # Use nearest depth for all 4 corners (uniform depth model)
-            depths = [nearest_depth] * 4
-            logger.info(f"[OK] ROI nearest depth: {nearest_depth:.3f}m")
-            return depths, None, "roi_nearest"
+        # Get strawberry width for offset calculations
+        width_mm = self.config.get("strawberry_dimensions", {}).get("width_mm", 32.5)
+        width_m = width_mm / 1000.0
+        
+        # Check if enforce_depth_constraint is enabled (pinhole mode)
+        enforce_depth_constraint = self.config.get("pnp_solver", {}).get("enforce_depth_constraint", False)
+        
+        # Sample depth based on strategy
+        raw_depth = None
+        strategy_name = None
+        depth_offset = 0.0
+        
+        if output_strategy == "closest" or output_strategy == "closest_offset":
+            # Sample minimum depth from ROI
+            roi_grid_size = ds_cfg.get("roi_sample_grid", 20)
+            raw_depth = self._sample_roi_nearest_depth(depth_frame, bbox_cxcywh, roi_grid_size)
+            strategy_name = output_strategy
+            
+            if raw_depth is not None and min_depth <= raw_depth <= max_depth:
+                # Calculate offset but don't apply yet in pinhole mode
+                if output_strategy == "closest_offset":
+                    offset_multiplier = ds_cfg.get("closest_offset_multiplier", 0.5)
+                    depth_offset = width_m * offset_multiplier
+                    
+                    if enforce_depth_constraint:
+                        # Pinhole mode: offset applied after PnP
+                        logger.info(f"[OK] ROI closest depth: {raw_depth:.3f}m (offset {depth_offset*1000:.1f}mm will be applied after PnP)")
+                        depths = [raw_depth] * 4
+                    else:
+                        # Non-pinhole: offset affects PnP initial guess
+                        final_depth = raw_depth + depth_offset
+                        logger.info(f"[OK] ROI closest depth: {raw_depth:.3f}m + offset {depth_offset*1000:.1f}mm = {final_depth:.3f}m (affects PnP)")
+                        depths = [final_depth] * 4
+                else:
+                    logger.info(f"[OK] ROI closest depth: {raw_depth:.3f}m")
+                    depths = [raw_depth] * 4
+                
+                return depths, None, strategy_name, depth_offset
+            else:
+                logger.debug(f"ROI closest failed: depth={raw_depth}")
+        
+        elif output_strategy == "center" or output_strategy == "center_offset":
+            # Sample depth at bbox center
+            cx, cy = bbox_cxcywh[0], bbox_cxcywh[1]
+            raw_depth = self.depth_sampler.sample(depth_frame, (int(cx), int(cy)))
+            strategy_name = output_strategy
+            
+            if raw_depth is not None and min_depth <= raw_depth <= max_depth:
+                # Calculate offset but don't apply yet in pinhole mode
+                if output_strategy == "center_offset":
+                    offset_multiplier = ds_cfg.get("center_offset_multiplier", 0.4)
+                    depth_offset = width_m * offset_multiplier
+                    
+                    if enforce_depth_constraint:
+                        # Pinhole mode: offset applied after PnP
+                        logger.info(f"[OK] ROI center depth: {raw_depth:.3f}m (offset {depth_offset*1000:.1f}mm will be applied after PnP)")
+                        depths = [raw_depth] * 4
+                    else:
+                        # Non-pinhole: offset affects PnP initial guess
+                        final_depth = raw_depth + depth_offset
+                        logger.info(f"[OK] ROI center depth: {raw_depth:.3f}m + offset {depth_offset*1000:.1f}mm = {final_depth:.3f}m (affects PnP)")
+                        depths = [final_depth] * 4
+                else:
+                    logger.info(f"[OK] ROI center depth: {raw_depth:.3f}m")
+                    depths = [raw_depth] * 4
+                
+                return depths, None, strategy_name, depth_offset
+            else:
+                logger.debug(f"ROI center failed: depth={raw_depth}")
+        
         else:
-            logger.debug(f"ROI nearest failed: depth={nearest_depth}")
+            logger.warning(f"Unknown output_strategy '{output_strategy}', falling back to closest")
+            # Fallback to closest strategy
+            roi_grid_size = ds_cfg.get("roi_sample_grid", 20)
+            raw_depth = self._sample_roi_nearest_depth(depth_frame, bbox_cxcywh, roi_grid_size)
+            
+            if raw_depth is not None and min_depth <= raw_depth <= max_depth:
+                depths = [raw_depth] * 4
+                logger.info(f"[OK] ROI closest depth (fallback): {raw_depth:.3f}m")
+                return depths, None, "closest_fallback", 0.0
+            else:
+                logger.debug(f"ROI closest fallback failed: depth={raw_depth}")
         
-        # Strategy 2: Inset corner sampling (backup for when ROI fails)
+        # Fallback Strategy 1: Inset corner sampling (backup for when primary strategy fails)
+        logger.debug("Primary strategy failed, trying inset corner sampling")
         inset_ratio = self.config.get("depth_sampling", {}).get("inset_ratio", 0.15)
         inset_corners = self._get_inset_corners(bbox_cxcywh, inset_ratio)
         depths, error = self._sample_corner_depths_strategy(
             depth_frame, inset_corners, "inset"
         )
         if depths is not None:
-            return depths, None, "inset"
+            return depths, None, "inset", 0.0
         
-        # Strategy 3: Bbox center depth for all corners
+        # Fallback Strategy 2: Bbox center depth for all corners
+        logger.debug("Inset sampling failed, trying bbox center")
         cx, cy = bbox_cxcywh[0], bbox_cxcywh[1]
         center_depth = self.depth_sampler.sample(depth_frame, (int(cx), int(cy)))
         
         if center_depth is not None and min_depth <= center_depth <= max_depth:
             # Use center depth for all 4 corners
             depths = [center_depth] * 4
-            return depths, None, "center"
+            return depths, None, "center_fallback", 0.0
         
-        # Strategy 4: Last resort - bbox median depth
+        # Fallback Strategy 3: Last resort - bbox median depth
+        logger.debug("Center sampling failed, trying bbox median")
         grid_size = self.config.get("depth_sampling", {}).get("bbox_sample_grid", 10)
         median_depth = self._sample_bbox_median_depth(depth_frame, bbox_cxcywh, grid_size)
         
         if median_depth is not None and min_depth <= median_depth <= max_depth:
             # Use median depth for all 4 corners
             depths = [median_depth] * 4
-            return depths, None, "bbox_median"
+            return depths, None, "bbox_median", 0.0
         
         # All strategies failed
-        return None, "all depth sampling strategies failed (roi_nearest/inset/center/bbox_median)", "failed"
+        return None, f"all depth sampling strategies failed (primary={output_strategy}, fallbacks=inset/center/bbox_median)", "failed", 0.0
     
     def _sample_corner_depths_strategy(
         self,
@@ -1004,7 +1095,7 @@ class FruitPoseEstimator:
         corners_2d = self._cxcywh_to_corners(bbox_cxcywh)
         
         # Sample depths at corners with adaptive fallback
-        depths, error, strategy = self._sample_corner_depths(depth_frame, bbox_cxcywh, corners_2d)
+        depths, error, strategy, depth_offset = self._sample_corner_depths(depth_frame, bbox_cxcywh, corners_2d)
         if error:
             return PoseEstimationResult(
                 bbox_cxcywh=bbox_cxcywh,
@@ -1085,7 +1176,18 @@ class FruitPoseEstimator:
         T_cam_fruit, rotation_matrix = self._build_transform_matrix(rvec, tvec)
         position_cam = T_cam_fruit[:3, 3]
         
-        logger.info(f"[OK] Pose estimated for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")
+        # Apply depth offset after PnP (only affects Z in pinhole mode)
+        enforce_depth_constraint = self.config.get("pnp_solver", {}).get("enforce_depth_constraint", False)
+        if enforce_depth_constraint and depth_offset > 0.0:
+            # In pinhole mode, offset is applied after PnP to only affect Z
+            original_z = position_cam[2]
+            T_cam_fruit[2, 3] += depth_offset
+            position_cam = T_cam_fruit[:3, 3]
+            logger.info(f"[Offset Applied] Z: {original_z:.4f}m → {position_cam[2]:.4f}m (+{depth_offset*1000:.1f}mm)")
+            logger.info(f"[OK] Final pose for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")
+        else:
+            logger.info(f"[OK] Pose estimated for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")
+        
         logger.debug(f"Rotation matrix:\n{rotation_matrix}")
         
         return PoseEstimationResult(

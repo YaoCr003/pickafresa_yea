@@ -50,9 +50,24 @@ depth_sampling:
   variance_threshold_far: 0.30      # Variance threshold for depth ≥ 2.0m
   distance_threshold_close: 0.5     # Distance in meters defining "close range"
   distance_threshold_mid: 2.0       # Distance in meters defining "mid range"
-  inset_ratio: 0.15                 # Inset ratio for edge-avoiding corner sampling (15%)
+  inset_ratio: 0.3                # Inset ratio for edge-avoiding corner sampling (15%)
   bbox_sample_grid: 10              # Grid size for bbox median sampling (10×10)
   roi_sample_grid: 20               # Grid size for ROI nearest depth sampling (20×20)
+  
+  # Depth output strategy (how to determine final depth value)
+  # Options:
+  #   "closest"         - Use minimum depth from ROI (current default, finds fruit surface)
+  #   "center"          - Use depth at center of ROI
+  #   "closest_offset"  - Use minimum depth + 0.5× strawberry width (pushes deeper into fruit)
+  #   "center_offset"   - Use center depth + 0.4× strawberry width (pushes deeper from center)
+  #
+  # NOTE: When enforce_depth_constraint=true (pinhole mode), offsets are applied AFTER PnP
+  #       solving, so they ONLY affect Z without changing X or Y.
+  #       When enforce_depth_constraint=false, offsets affect the PnP initial guess and
+  #       will proportionally scale X, Y, and Z according to pinhole projection.
+  output_strategy: "closest_offset"        # Depth measurement strategy
+  closest_offset_multiplier: 0.6    # Multiplier for closest_offset (0.5 = half width)
+  center_offset_multiplier: 0.6     # Multiplier for center_offset (0.4 = 40% of width)
 
 # PnP solver configuration
 pnp_solver:
@@ -71,9 +86,9 @@ pnp_solver:
 
 # Validation thresholds
 validation:
-  min_confidence: 0.25              # Minimum detection confidence to process
+  min_confidence: 0.20             # Minimum detection confidence to process
   max_depth_meters: 3.0             # Maximum valid depth reading (meters)
-  min_depth_meters: 0.105           # Minimum valid depth reading (meters) - D435 spec
+  min_depth_meters: 0.190           # Minimum valid depth reading (meters) - D435 spec
   min_bbox_area: 100                # Minimum bounding box area (pixels)
   max_bbox_area: 250000             # Maximum bounding box area (pixels)
 
