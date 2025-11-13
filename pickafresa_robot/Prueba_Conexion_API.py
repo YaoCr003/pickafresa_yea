@@ -59,10 +59,10 @@ def esperar_estado(deseado):
     print(f"Estado '{deseado}' confirmado.")
     return True
 
-home_target = RDK.Item('Home', ITEM_TYPE_TARGET)# type: ignore
+home_target = RDK.Item('Home_2', ITEM_TYPE_TARGET)# type: ignore
 foto_target = RDK.Item('Foto', ITEM_TYPE_TARGET)# type: ignore
-T3_target = RDK.Item('Target 3', ITEM_TYPE_TARGET)# type: ignore
-T4_target = RDK.Item('Target 4', ITEM_TYPE_TARGET)# type: ignore
+T3_target = RDK.Item('pre_place berry', ITEM_TYPE_TARGET)# type: ignore
+T4_target = RDK.Item('place berry', ITEM_TYPE_TARGET)# type: ignore
 T5_target = RDK.Item('Target 5', ITEM_TYPE_TARGET)# type: ignore
 
 item = RDK.ItemUserPick('UR3e', ITEM_TYPE_ROBOT)# type: ignore
