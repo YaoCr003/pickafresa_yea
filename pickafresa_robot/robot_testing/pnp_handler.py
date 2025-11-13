@@ -323,9 +323,13 @@ class PnPDataHandler:
         # T_base_flange = T_base_gripperTCP @ inv(T_flange_gripperTCP)
         T_base_flange = T_base_gripperTCP_m @ np.linalg.inv(self.T_flange_gripperTCP)
         
+        self._log_info(f"T_base_flange position: {T_base_flange[:3, 3] * 1000} mm")
+        
         # Step 2: Compute camera position from flange position
         # T_base_camera = T_base_flange @ T_flange_cameraTCP
         T_base_camera = T_base_flange @ self.T_flange_cameraTCP
+        
+        self._log_info(f"T_base_camera position: {T_base_camera[:3, 3] * 1000} mm")
         
         # Step 3: Compute fruit position from camera
         # T_base_fruit = T_base_camera @ T_cam_fruit

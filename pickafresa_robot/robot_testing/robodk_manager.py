@@ -468,6 +468,77 @@ class RoboDKManager:
             self._log_error(f"Failed to create target '{name}': {e}")
             return None
     
+    def create_target_from_joints(
+        self,
+        name: str,
+        joints: List[float],
+        color: Optional[List[float]] = None
+    ) -> bool:
+        """
+        Create a target with specific joint configuration.
+        
+        This is useful for joint-space control where you want to specify exact
+        joint angles rather than Cartesian positions. The target will be created
+        at the Cartesian pose corresponding to the given joint configuration.
+        
+        Args:
+            name: Name for the target
+            joints: List of 6 joint angles in degrees [j0, j1, j2, j3, j4, j5]
+            color: RGB color [r, g, b] 0-255 (optional)
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.RDK is None or self.robot is None:
+            self._log_error("Not connected or no robot selected")
+            return False
+        
+        try:
+            # Validate joint count
+            if len(joints) != 6:
+                self._log_error(f"Invalid joint count: expected 6, got {len(joints)}")
+                return False
+            
+            # Get robot base reference frame
+            robot_base_frame = self.robot.Parent()
+            
+            # Save current robot configuration
+            current_joints = self.robot.Joints()
+            
+            # Temporarily set robot to target joints to get the Cartesian pose
+            joints_mat = robomath.Mat([joints])
+            self.robot.setJoints(joints_mat.tr())
+            
+            # Get the Cartesian pose at these joints
+            target_pose = self.robot.Pose()
+            
+            # Restore original robot configuration
+            self.robot.setJoints(current_joints)
+            
+            # Create target with the pose
+            target = self.RDK.AddTarget(name, itemparent=robot_base_frame, itemrobot=self.robot)
+            target.setPose(target_pose)
+            
+            # IMPORTANT: Set the joint configuration
+            # This ensures the robot uses these specific joints when moving to this target
+            target.setJoints(joints_mat.tr())
+            
+            # Set color if specified
+            if color:
+                target.setColor(color)
+            
+            self._log_info(f"[OK] Created joint-space target: {name}")
+            self._log_debug(f"  Joints: {[f'{j:.2f}' for j in joints]}")
+            
+            # Store in dynamic targets
+            self.dynamic_targets[name] = target
+            
+            return True
+        
+        except Exception as e:
+            self._log_error(f"Failed to create joint-space target '{name}': {e}")
+            return False
+    
     def cleanup_dynamic_targets(self, fixed_targets: Optional[List[str]] = None) -> int:
         """
         Clean up all dynamically created targets and frames from RoboDK station.

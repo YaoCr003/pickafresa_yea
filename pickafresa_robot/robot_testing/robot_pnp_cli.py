@@ -1489,8 +1489,9 @@ class RobotPnPCLI:
         self.logger.info("=" * 60)
         self.logger.info("TRANSFORMATION DEBUG")
         self.logger.info("=" * 60)
-        self.logger.info(f"T_base_gripperTCP (Foto gripper TCP) at index [0:3, 3]:")
-        self.logger.info(f"  Position: [{T_base_gripperTCP[0,3]:.3f}, {T_base_gripperTCP[1,3]:.3f}, {T_base_gripperTCP[2,3]:.3f}]")
+        self.logger.info(f"T_base_gripperTCP (Foto gripper TCP) FULL MATRIX:")
+        for i in range(4):
+            self.logger.info(f"  [{T_base_gripperTCP[i,0]:9.6f}, {T_base_gripperTCP[i,1]:9.6f}, {T_base_gripperTCP[i,2]:9.6f}, {T_base_gripperTCP[i,3]:9.6f}]")
         self.logger.info(f"Fruit position in camera frame (position_cam):")
         self.logger.info(f"  [{fruit.position_cam[0]:.3f}, {fruit.position_cam[1]:.3f}, {fruit.position_cam[2]:.3f}]")
         self.logger.info(f"Fruit position in base frame (position_base):")
@@ -2244,6 +2245,10 @@ class RobotPnPCLI:
         Generates and executes a series of cumulative movements relative to the pick
         position to help detach the berry from the plant.
         
+        Supports two control modes per target:
+        1. Cartesian control (offset_mm + rotation_deg) - traditional approach
+        2. Joint space control (joint_deltas_deg) - for precise singularity-free maneuvers
+        
         Args:
             T_base_pick: Pick pose in base frame (meters)
             T_base_fruit: Fruit pose in base frame (meters) for reference frame
@@ -2275,84 +2280,169 @@ class RobotPnPCLI:
         # Get collision config
         collision_config = self.config.get('collision_avoidance', {})
         
-        # Start from pick position for cumulative offsets
-        T_current = T_base_pick.copy()
+        # Track current state for cumulative control
+        T_current = T_base_pick.copy()  # Current Cartesian pose
+        
+        # Get initial joint configuration at pick position
+        # This is needed for cumulative joint-space control
+        try:
+            current_joints = self.robodk_manager.robot.Joints().list()
+            self.logger.debug(f"Initial joints at pick: {[f'{j:.2f}' for j in current_joints]}")
+        except Exception as e:
+            self.logger.error(f"Failed to get initial joint configuration: {e}")
+            return False
         
         for i, target_config in enumerate(target_configs, start=1):
             target_name = target_config.get('name', f'post_pick_{i}')
-            offset_mm = target_config.get('offset_mm', [0.0, 0.0, 0.0])
-            rotation_deg = target_config.get('rotation_deg', [0.0, 0.0, 0.0])
             move_type = target_config.get('move_type', 'linear')
             
-            self.logger.info(f"Post-pick target {i}/{len(target_configs)}: {target_name}")
-            self.logger.info(f"  Offset: {offset_mm} mm, Rotation: {rotation_deg} deg")
-            self.logger.info(f"  Move type: {move_type}")
+            # Check if joint-space control is specified
+            joint_deltas_deg = target_config.get('joint_deltas_deg', None)
             
-            # Apply translation offset
-            # For absolute mode: always use original fruit frame for consistency
-            # For cumulative mode: use current frame (rotation affects subsequent offsets)
-            offset_m = np.array(offset_mm) / 1000.0
-            if rotation_mode == 'absolute':
-                # Use original fruit frame for all offsets (consistent with prepick/pick behavior)
-                offset_in_base = T_base_fruit[:3, :3] @ offset_m
-            else:
-                # Use current accumulated frame (rotations affect subsequent offsets)
-                offset_in_base = T_current[:3, :3] @ offset_m
-            
-            T_current[:3, 3] += offset_in_base
-            
-            # Log position after translation but before rotation
-            self.logger.debug(f"Position after translation: [{T_current[0,3]*1000:.1f}, {T_current[1,3]*1000:.1f}, {T_current[2,3]*1000:.1f}] mm")
-            
-            # Apply rotation
-            if any(abs(r) > 0.01 for r in rotation_deg):
-                rotation_rad = np.deg2rad(rotation_deg)
-                R_offset, _ = cv2.Rodrigues(rotation_rad)
+            if joint_deltas_deg is not None:
+                # ==================== JOINT SPACE CONTROL ====================
+                self.logger.info(f"Post-pick target {i}/{len(target_configs)}: {target_name} [JOINT CONTROL]")
+                self.logger.info(f"  Joint deltas: {joint_deltas_deg} deg")
+                self.logger.info(f"  Move type: {move_type}")
                 
-                if rotation_mode == 'absolute':
-                    # Absolute: Rotation specified in BASE frame, applied cumulatively
-                    # The rotation_deg are euler angles in the BASE coordinate system
-                    # We compose this with the current orientation to build up the rotation
-                    # Result: Each rotation adds to the previous in base frame coordinates
-                    T_current[:3, :3] = R_offset.astype(np.float64) @ T_current[:3, :3]
-                    self.logger.info(f"  Applied ABSOLUTE rotation (base frame): {rotation_deg}")
-                else:
-                    # Cumulative: Rotation in current local frame
-                    # The rotation happens around the current gripper's local axes
-                    T_current[:3, :3] = T_current[:3, :3] @ R_offset.astype(np.float64)
-                    self.logger.info(f"  Applied CUMULATIVE rotation (local frame): {rotation_deg}")
-            
-            # Convert to mm for RoboDK
-            T_current_mm = T_current.copy()
-            T_current_mm[:3, 3] *= 1000.0
-            
-            # Create target in RoboDK
-            robodk_target_name = f"{target_name}_{berry_label}"
-            target = self.robodk_manager.create_target_from_pose(
-                name=robodk_target_name,
-                T_base_target=T_current_mm,
-                create_frame=True,
-                color=[255, 128, 0]  # Orange
-            )
-            
-            if target is None:
-                self.logger.error(f"Failed to create post-pick target: {robodk_target_name}")
-                return False
-            
-            # Move to post-pick target
-            if use_collision_avoidance:
-                success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
-                    robodk_target_name, move_type, confirm_movement, False,
-                    enable_collision_avoidance=True, collision_config=collision_config
-                )
-                if not success:
-                    self.logger.error(f"Failed to reach post-pick target {robodk_target_name}: {message}")
+                # Validate joint deltas (should have 6 values for UR3e)
+                if len(joint_deltas_deg) != 6:
+                    self.logger.error(f"Invalid joint_deltas_deg: expected 6 values, got {len(joint_deltas_deg)}")
                     return False
-                if message:
-                    self.logger.info(f"Post-pick movement: {message}")
+                
+                # Apply cumulative joint deltas
+                target_joints = [current_joints[j] + joint_deltas_deg[j] for j in range(6)]
+                
+                self.logger.info(f"  Current joints: {[f'{j:.2f}' for j in current_joints]}")
+                self.logger.info(f"  Target joints:  {[f'{j:.2f}' for j in target_joints]}")
+                
+                # Create target with joint configuration
+                robodk_target_name = f"{target_name}_{berry_label}"
+                success = self.robodk_manager.create_target_from_joints(
+                    name=robodk_target_name,
+                    joints=target_joints,
+                    color=[255, 165, 0]  # Orange for joint control
+                )
+                
+                if not success:
+                    self.logger.error(f"Failed to create joint-space target: {robodk_target_name}")
+                    return False
+                
+                # Move to target
+                if use_collision_avoidance:
+                    success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
+                        robodk_target_name, move_type, confirm_movement, False,
+                        enable_collision_avoidance=True, collision_config=collision_config
+                    )
+                    if not success:
+                        self.logger.error(f"Failed to reach post-pick target {robodk_target_name}: {message}")
+                        return False
+                    if message:
+                        self.logger.info(f"Post-pick movement: {message}")
+                else:
+                    if not self.robodk_manager.move_to_target(robodk_target_name, move_type, confirm_movement, False):
+                        self.logger.error(f"Failed to reach post-pick target {robodk_target_name}")
+                        return False
+                
+                # Update current joint state for next iteration
+                try:
+                    current_joints = self.robodk_manager.robot.Joints().list()
+                    # Also update Cartesian pose for consistency
+                    pose_robodk = self.robodk_manager.robot.Pose()
+                    # Properly convert RoboDK Mat to numpy array
+                    T_current = np.array([
+                        pose_robodk[0, :],  # First row
+                        pose_robodk[1, :],  # Second row
+                        pose_robodk[2, :],  # Third row
+                        pose_robodk[3, :]   # Fourth row
+                    ], dtype=np.float64)
+                    T_current = np.squeeze(T_current)  # Remove any extra dimensions
+                    T_current[:3, 3] /= 1000.0  # Convert to meters
+                except Exception as e:
+                    self.logger.error(f"Failed to update robot state: {e}")
+                    return False
+                
             else:
-                if not self.robodk_manager.move_to_target(robodk_target_name, move_type, confirm_movement, False):
-                    self.logger.error(f"Failed to reach post-pick target {robodk_target_name}")
+                # ==================== CARTESIAN CONTROL ====================
+                offset_mm = target_config.get('offset_mm', [0.0, 0.0, 0.0])
+                rotation_deg = target_config.get('rotation_deg', [0.0, 0.0, 0.0])
+                
+                self.logger.info(f"Post-pick target {i}/{len(target_configs)}: {target_name} [CARTESIAN CONTROL]")
+                self.logger.info(f"  Offset: {offset_mm} mm, Rotation: {rotation_deg} deg")
+                self.logger.info(f"  Move type: {move_type}")
+                
+                # Apply translation offset
+                # For absolute mode: always use original fruit frame for consistency
+                # For cumulative mode: use current frame (rotation affects subsequent offsets)
+                offset_m = np.array(offset_mm) / 1000.0
+                if rotation_mode == 'absolute':
+                    # Use original fruit frame for all offsets (consistent with prepick/pick behavior)
+                    offset_in_base = T_base_fruit[:3, :3] @ offset_m
+                else:
+                    # Use current accumulated frame (rotations affect subsequent offsets)
+                    offset_in_base = T_current[:3, :3] @ offset_m
+                
+                T_current[:3, 3] += offset_in_base
+                
+                # Log position after translation but before rotation
+                self.logger.debug(f"Position after translation: [{T_current[0,3]*1000:.1f}, {T_current[1,3]*1000:.1f}, {T_current[2,3]*1000:.1f}] mm")
+                
+                # Apply rotation
+                if any(abs(r) > 0.01 for r in rotation_deg):
+                    rotation_rad = np.deg2rad(rotation_deg)
+                    R_offset, _ = cv2.Rodrigues(rotation_rad)
+                    
+                    if rotation_mode == 'absolute':
+                        # Absolute: Rotation specified in BASE frame, applied cumulatively
+                        # The rotation_deg are euler angles in the BASE coordinate system
+                        # We compose this with the current orientation to build up the rotation
+                        # Result: Each rotation adds to the previous in base frame coordinates
+                        T_current[:3, :3] = R_offset.astype(np.float64) @ T_current[:3, :3]
+                        self.logger.info(f"  Applied ABSOLUTE rotation (base frame): {rotation_deg}")
+                    else:
+                        # Cumulative: Rotation in current local frame
+                        # The rotation happens around the current gripper's local axes
+                        T_current[:3, :3] = T_current[:3, :3] @ R_offset.astype(np.float64)
+                        self.logger.info(f"  Applied CUMULATIVE rotation (local frame): {rotation_deg}")
+                
+                # Convert to mm for RoboDK
+                T_current_mm = T_current.copy()
+                T_current_mm[:3, 3] *= 1000.0
+                
+                # Create target in RoboDK
+                robodk_target_name = f"{target_name}_{berry_label}"
+                target = self.robodk_manager.create_target_from_pose(
+                    name=robodk_target_name,
+                    T_base_target=T_current_mm,
+                    create_frame=True,
+                    color=[255, 128, 0]  # Orange
+                )
+                
+                if target is None:
+                    self.logger.error(f"Failed to create post-pick target: {robodk_target_name}")
+                    return False
+                
+                # Move to post-pick target
+                if use_collision_avoidance:
+                    success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
+                        robodk_target_name, move_type, confirm_movement, False,
+                        enable_collision_avoidance=True, collision_config=collision_config
+                    )
+                    if not success:
+                        self.logger.error(f"Failed to reach post-pick target {robodk_target_name}: {message}")
+                        return False
+                    if message:
+                        self.logger.info(f"Post-pick movement: {message}")
+                else:
+                    if not self.robodk_manager.move_to_target(robodk_target_name, move_type, confirm_movement, False):
+                        self.logger.error(f"Failed to reach post-pick target {robodk_target_name}")
+                        return False
+                
+                # Update current joint state for next iteration (in case next target uses joint control)
+                try:
+                    current_joints = self.robodk_manager.robot.Joints().list()
+                except Exception as e:
+                    self.logger.error(f"Failed to update joint state: {e}")
                     return False
             
             self.logger.info(f"[OK] Completed post-pick target {i}/{len(target_configs)}")

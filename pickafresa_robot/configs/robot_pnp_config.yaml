@@ -22,6 +22,7 @@ robodk:
     # Alignment approach targets for stage 2 capture
     alignment_approach1: "Alignment_Approach1"
     alignment_approach2: "Alignment_Approach2"
+    place_final: "place_final"
     # prepick, pick, and place are dynamically generated based on PnP results
   
   # Fixed targets that should NOT be cleaned up (preserved across runs)
@@ -32,6 +33,7 @@ robodk:
     - "Prepick_plane"
     - "Alignment_Approach1"
     - "Alignment_Approach2"
+    - "place_final"
 
 # ==============================================================================
 # COORDINATE TRANSFORMS
@@ -90,26 +92,52 @@ post_pick:
   
   # Post-pick target configurations (cumulative offsets from pick position)
   # Each target builds upon the previous one's POSITION (always cumulative)
-  # Offsets are in berry/fruit coordinate frame (or current frame if rotation_mode="cumulative")
-  # Rotations use axis-angle representation [u, v, w] in degrees via Rodrigues formula
-  #
-  # In "absolute" mode: Rotation axes are BASE FRAME (UR3e base)
+  # 
+  # TWO CONTROL MODES PER TARGET:
+  # ==============================
+  # 
+  # MODE 1: CARTESIAN CONTROL (current/default)
+  # --------------------------------------------
+  # Use offset_mm and rotation_deg for Cartesian space control
+  # - Offsets are in berry/fruit coordinate frame (or current frame if rotation_mode="cumulative")
+  # - Rotations use axis-angle representation [u, v, w] in degrees via Rodrigues formula
+  # - In "absolute" mode: Rotation axes are BASE FRAME (UR3e base)
   #   - rotation_deg: [-70, 0, 0] means 70° rotation around base X-axis
   #   - Applied ON TOP of current orientation (builds up from pick)
-  #
-  # In "cumulative" mode: Rotation axes are CURRENT GRIPPER FRAME  
+  # - In "cumulative" mode: Rotation axes are CURRENT GRIPPER FRAME  
   #   - rotation_deg: [-70, 0, 0] means 70° twist around gripper's forward direction
   #   - Each rotation happens in the new orientation from previous step
+  #
+  # MODE 2: JOINT SPACE CONTROL (NEW - for precise singularity-free maneuvers)
+  # ---------------------------------------------------------------------------
+  # Use joint_deltas_deg to directly specify joint angle changes
+  # - Format: [j0, j1, j2, j3, j4, j5] - deltas in degrees for each joint
+  # - Cumulative: Each target's deltas are relative to the previous joint configuration
+  # - Example: [0, 5.0, -3.0, 0, 0, 2.0] moves j1 by +5°, j2 by -3°, j5 by +2°
+  # - Useful for: avoiding singularities, precise local maneuvers, small adjustments
+  # - When joint_deltas_deg is present, offset_mm and rotation_deg are IGNORED
+  # - Recommended move_type: "joint" for smooth joint-space interpolation
+  #
+  # Target selection: If joint_deltas_deg exists, use joint control; else use Cartesian
   targets:
     - name: "post_pick_detach"
       offset_mm: [0.0, 0.0, 0.0]       # 30mm back toward camera (detach motion)
-      rotation_deg: [-10, 0.0, 0.0]      # Rotate -90° about X-axis (twist for detachment)
+      rotation_deg: [10, 0.0, 0.0]      # Rotate -90° about X-axis (twist for detachment)
       move_type: "linear"                # Movement type: "linear" or "joint"
+      # joint_deltas_deg: [0, 3.0, -2.0, 0, 0, 1.0]  # OPTIONAL: uncomment for joint control
     
     - name: "post_pick_clear"
-      offset_mm: [0.0, 80, 50.0]         # Additional offset in (possibly rotated) frame
-      rotation_deg: [-15.0, 0.0, 0.0]    # Rotate -15° about X-axis (partial reset)
-      move_type: "linear"                # Movement type: "linear" or "joint"
+      #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
+      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15° about X-axis (partial reset)
+      move_type: "joint"                # Movement type: "linear" or "joint"
+      joint_deltas_deg: [0, 0, -10, 0, 0, 720]  # OPTIONAL: uncomment for joint control
+
+    - name: "post_pick_reset"
+      #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
+      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15° about X-axis (partial reset)
+      move_type: "joint"                # Movement type: "linear" or "joint"
+      joint_deltas_deg: [0, 0, 10, 0, 0, -720]  # OPTIONAL: uncomment for joint control
+
 
 # ALTERNATIVE POST-PICK CONFIGURATION
   # targets:
@@ -123,6 +151,49 @@ post_pick:
   #     rotation_deg: [-15.0, 0.0, 0.0]      # Reset twist
   #     move_type: "linear"                 # Movement type: "linear" or "joint"
 # ALTERNATIVE POST-PICK CONFIGURATION END
+
+# JOINT-SPACE CONTROL EXAMPLES
+# =============================
+# Example 1: Pure joint-space control for singularity avoidance
+  # targets:
+  #   - name: "post_pick_detach"
+  #     joint_deltas_deg: [0, 5.0, -3.0, 0, 2.0, 0]  # Small joint adjustments
+  #     move_type: "joint"                            # Use joint interpolation
+    
+  #   - name: "post_pick_clear"
+  #     joint_deltas_deg: [0, -2.0, 1.5, 0, -1.0, 0]  # Cumulative from detach
+  #     move_type: "joint"
+  
+# Example 2: Hybrid approach - Cartesian then joint control
+  # targets:
+  #   - name: "post_pick_detach"
+  #     offset_mm: [0.0, 0.0, -20.0]      # Cartesian: pull back 20mm
+  #     rotation_deg: [-45, 0.0, 0.0]     # Cartesian: twist 45°
+  #     move_type: "linear"
+    
+  #   - name: "post_pick_adjust"
+  #     joint_deltas_deg: [0, 3.0, 0, 0, 0, 0]  # Joint: adjust j1 only
+  #     move_type: "joint"
+    
+  #   - name: "post_pick_clear"
+  #     offset_mm: [0.0, 50, 30.0]        # Cartesian: move to clear position
+  #     rotation_deg: [0.0, 0.0, 0.0]
+  #     move_type: "linear"
+
+# Example 3: Fine-tuned joint maneuvers for specific workspace
+  # targets:
+  #   - name: "post_pick_detach"
+  #     joint_deltas_deg: [0, 4.0, -2.5, 0, 1.5, 0]
+  #     move_type: "joint"
+    
+  #   - name: "post_pick_twist"
+  #     joint_deltas_deg: [0, 0, 0, 0, 0, 15.0]  # Twist wrist only (j5)
+  #     move_type: "joint"
+    
+  #   - name: "post_pick_clear"
+  #     joint_deltas_deg: [0, -3.0, 2.0, 0, -1.0, -15.0]  # Return and clear
+  #     move_type: "joint"
+# JOINT-SPACE CONTROL EXAMPLES END
 
 # ==============================================================================
 # MULTI-STAGE CAPTURE CONFIGURATION
@@ -225,7 +296,7 @@ multi_berry:
 # MQTT GRIPPER CONTROL
 # ==============================================================================
 mqtt:
-  enabled: false  # Enable/disable MQTT (can override at runtime)
+  enabled: true  # Enable/disable MQTT (can override at runtime)
   broker_ip: "192.168.1.114"
   broker_port: 1883
   keepalive: 60
@@ -243,7 +314,7 @@ mqtt:
   # State confirmation settings
   confirmation:
     enabled: true              # Wait for state confirmation
-    timeout_seconds: 30.0      # Timeout for state confirmation
+    timeout_seconds: 20000.0      # Timeout for state confirmation
     allow_override: true       # Allow user to skip waiting with keypress
     override_key: "c"          # Key to press to continue without confirmation
 
@@ -274,7 +345,7 @@ movement:
       acceleration: 50
   
   # Default profile to use
-  default_profile: "turtle"  # Options: "turtle", "slow", "normal", "custom"
+  default_profile: "slow"  # Options: "turtle", "slow", "normal", "custom"
   
   # Movement type preferences
   move_type:
@@ -305,7 +376,7 @@ vision_service:
 # ==============================================================================
 pnp_data:
   # Source mode: "vision" (vision service), "api" (live direct), "json" (offline file)
-  source_mode: "json"  # Options: "vision", "api", "json"
+  source_mode: "vision"  # Options: "vision", "api", "json"
   
   # API mode settings (when source_mode = "api")
   api:
@@ -316,7 +387,7 @@ pnp_data:
   # JSON mode settings (when source_mode = "json")
   json:
     # Default JSON file to load (relative to repo root)
-    default_file: "pickafresa_vision/captures/20251106_163937_data.json"
+    default_file: ""
     
     # Search directory for JSON files (for user selection)
     search_directory: "pickafresa_vision/captures"
@@ -409,6 +480,13 @@ sequence:
       type: "move"
       target: "Home"
       move_type: "joint"
+      confirm: true
+      description: "Move to place/home position"
+
+    - name: "place_final"
+      type: "move"
+      target: "place_final"
+      move_type: "linear"
       confirm: true
       description: "Move to place/home position"
     
