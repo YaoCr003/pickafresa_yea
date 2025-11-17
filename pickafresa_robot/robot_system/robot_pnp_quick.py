@@ -24,7 +24,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from pickafresa_robot.robot_testing.robot_pnp_cli import RobotPnPCLI
+from pickafresa_robot.robot_system.robot_pnp_cli import RobotPnPCLI
 
 
 def main():

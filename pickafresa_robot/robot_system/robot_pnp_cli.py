@@ -34,12 +34,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # Local imports
-from pickafresa_robot.robot_testing.ros2_logger import create_logger
-from pickafresa_robot.robot_testing.mqtt_gripper import MQTTGripperController
-from pickafresa_robot.robot_testing.pnp_handler import (
+from pickafresa_robot.robot_system.ros2_logger import create_logger
+from pickafresa_robot.robot_system.mqtt_gripper import MQTTGripperController
+from pickafresa_robot.robot_system.pnp_handler import (
     PnPDataHandler, FruitDetection, create_transform_matrix
 )
-from pickafresa_robot.robot_testing.robodk_manager import RoboDKManager
+from pickafresa_robot.robot_system.robodk_manager import RoboDKManager
 
 try:
     import yaml
