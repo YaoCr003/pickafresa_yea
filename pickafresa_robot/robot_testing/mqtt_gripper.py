@@ -215,7 +215,8 @@ class MQTTGripperController:
         desired_state: str,
         timeout: float = 10.0,
         allow_override: bool = True,
-        override_key: str = "c"
+        override_key: str = "c",
+        confirm_on_timeout: bool = True
     ) -> bool:
         """
         Wait for gripper to reach desired state.
@@ -225,9 +226,10 @@ class MQTTGripperController:
             timeout: Maximum time to wait (seconds)
             allow_override: Allow user to skip waiting with keypress
             override_key: Key to press to override waiting
+            confirm_on_timeout: Require user confirmation if timeout occurs
         
         Returns:
-            True if state confirmed or overridden, False if timeout
+            True if state confirmed or overridden, False if timeout and user rejects
         """
         desired_state = desired_state.lower()
         
@@ -278,8 +280,23 @@ class MQTTGripperController:
             
             time.sleep(0.1)
         
-        # Timeout
+        # Timeout reached
         self._log_error(f"[FAIL] Timeout waiting for state '{desired_state}' (waited {timeout}s)")
+        
+        # Fallback: require user confirmation to proceed
+        if confirm_on_timeout:
+            self._log_warn("No gripper state confirmation received within timeout")
+            print(f"\n{'='*60}")
+            print(f"MQTT TIMEOUT: No '{desired_state}' state received")
+            print(f"{'='*60}")
+            response = input("Assume gripper reached desired state and continue? [Y/n]: ").strip().lower()
+            if response != 'n':
+                self._log_warn(f"User confirmed to proceed assuming state '{desired_state}'")
+                return True
+            else:
+                self._log_error("User rejected proceeding after timeout")
+                return False
+        
         return False
     
     def get_current_state(self) -> Optional[str]:
