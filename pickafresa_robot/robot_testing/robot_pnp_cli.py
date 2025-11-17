@@ -280,8 +280,18 @@ class RobotPnPCLI:
         except KeyboardInterrupt:
             if self.logger:
                 self.logger.error("\n!!! Program interrupted by user (Ctrl+C) !!!")
+                self.logger.info("Attempting to return robot to HOME position...")
             else:
                 print("\n!!! Program interrupted by user (Ctrl+C) !!!")
+                print("Attempting to return robot to HOME position...")
+            
+            # Try to return home before exit
+            try:
+                if self.robodk_manager and self.robodk_manager.robot:
+                    self._move_home()
+            except:
+                pass
+            
             return 1
         
         except Exception as e:
@@ -306,8 +316,8 @@ class RobotPnPCLI:
             response = input(f"\nUse configuration from '{self.config_path.name}'? [Y/n]: ").strip().lower()
             self.use_config = response != 'n'
         else:
-            response = input("\nUse configuration file? [y/N]: ").strip().lower()
-            self.use_config = response == 'y'
+            response = input("\nUse configuration file? [Y/n]: ").strip().lower()
+            self.use_config = response != 'n'
             
             if self.use_config:
                 # Prompt for config path
@@ -321,9 +331,73 @@ class RobotPnPCLI:
         
         # Load or create config
         if self.use_config:
-            return self._load_config_file()
+            if not self._load_config_file():
+                return False
         else:
-            return self._create_config_interactive()
+            if not self._create_config_interactive():
+                return False
+        
+        # Prompt for run mode confirmation (after config is loaded)
+        return self._confirm_run_mode()
+    
+    def _confirm_run_mode(self) -> bool:
+        """
+        Prompt user to confirm or change run mode.
+        
+        Returns:
+            True if configuration confirmed, False if user cancels
+        """
+        current_run_mode = self.config.get('run_mode', 'manual_confirm')
+        current_sim_mode = self.config.get('robodk', {}).get('simulation_mode', 'simulate')
+        
+        print("\n" + "="*70)
+        print("RUN MODE CONFIRMATION")
+        print("="*70)
+        print(f"Current run_mode: {current_run_mode}")
+        print(f"  - 'manual_confirm': Requires confirmation at each step (safe)")
+        print(f"  - 'autonomous': Skips confirmations, prompts only for anomalies")
+        print(f"\nCurrent simulation_mode: {current_sim_mode}")
+        print(f"  - 'simulate': RoboDK simulation only")
+        print(f"  - 'real_robot': Controls real physical robot")
+        print("="*70)
+        
+        # Ask if user wants to change run_mode
+        response = input(f"\nUse '{current_run_mode}' mode? [Y/n/change]: ").strip().lower()
+        
+        if response == 'n':
+            print("Configuration cancelled by user")
+            return False
+        elif response == 'change':
+            print("\nSelect run mode:")
+            print("  (m) manual_confirm - Safe testing with confirmations")
+            print("  (a) autonomous - Full automation, no confirmations")
+            mode_choice = input("Choice [m]: ").strip().lower()
+            
+            if mode_choice == 'a':
+                self.config['run_mode'] = 'autonomous'
+                print("[OK] Run mode set to: autonomous")
+            else:
+                self.config['run_mode'] = 'manual_confirm'
+                print("[OK] Run mode set to: manual_confirm")
+        
+        # Auto-link multi_berry mode based on run_mode
+        run_mode = self.config.get('run_mode', 'manual_confirm')
+        if 'multi_berry' not in self.config:
+            self.config['multi_berry'] = {}
+        
+        if run_mode == 'autonomous':
+            self.config['multi_berry']['mode'] = 'full_auto'
+            print("  → Multi-berry mode auto-set to: full_auto")
+        else:
+            self.config['multi_berry']['mode'] = 'semi_auto'
+            print("  → Multi-berry mode auto-set to: semi_auto")
+        
+        print(f"\n[OK] Configuration confirmed")
+        print(f"     Run mode: {self.config['run_mode']}")
+        print(f"     Simulation: {self.config.get('robodk', {}).get('simulation_mode', 'simulate')}")
+        print(f"     Multi-berry: {self.config['multi_berry']['mode']}")
+        
+        return True
     
     def _load_config_file(self) -> bool:
         """Load configuration from YAML file."""
@@ -358,12 +432,12 @@ class RobotPnPCLI:
         print("\n[1/5] RoboDK Settings")
         station = input("  Station file path [pickafresa_robot/rdk/SETUP Fresas.rdk]: ").strip()
         robot = input("  Robot model [UR3e]: ").strip()
-        mode = input("  Run mode - (s)imulate or (r)eal robot? [s]: ").strip().lower()
+        mode = input("  Simulation mode - (s)imulate or (r)eal robot? [s]: ").strip().lower()
         
         config['robodk'] = {
             'station_file': station or "pickafresa_robot/rdk/SETUP Fresas.rdk",
             'robot_model': robot or "UR3e",
-            'run_mode': "real_robot" if mode == 'r' else "simulate"
+            'simulation_mode': "real_robot" if mode == 'r' else "simulate"
         }
         
         # MQTT settings
@@ -402,9 +476,8 @@ class RobotPnPCLI:
         }
         
         if config['pnp_data']['source_mode'] == 'json':
-            json_file = input("  JSON file path [pickafresa_vision/captures/20251104_161710_data.json]: ").strip()
             config['pnp_data']['json'] = {
-                'default_file': json_file or "pickafresa_vision/captures/20251104_161710_data.json",
+                'search_directory': 'pickafresa_vision/captures',
                 'min_confidence': 0.5
             }
         
@@ -470,8 +543,13 @@ class RobotPnPCLI:
         }
         
         config['safety'] = {
-            'confirm_before_movement': True,
-            'confirm_before_gripper': True
+            'confirmations': {
+                'movements': True,
+                'gripper_actions': True,
+                'captures': True,
+                'between_berries': True,
+                'sequence_start': True
+            }
         }
         
         config['visualization'] = {
@@ -483,6 +561,48 @@ class RobotPnPCLI:
         
         print("\n[OK] Configuration created interactively")
         return True
+    
+    def _get_confirmation_setting(self, setting_name: str, default: bool = True) -> bool:
+        """
+        Get confirmation setting based on run_mode and granular controls.
+        
+        Args:
+            setting_name: Name of confirmation setting (e.g., 'movements', 'gripper_actions')
+            default: Default value if not found in config
+        
+        Returns:
+            True if confirmation required, False otherwise
+        """
+        run_mode = self.config.get('run_mode', 'manual_confirm')
+        
+        # In autonomous mode, confirmations default to False (only anomalies prompt)
+        # In manual_confirm mode, confirmations default to True
+        mode_default = (run_mode == 'manual_confirm')
+        
+        # Check granular confirmation settings
+        safety_config = self.config.get('safety', {})
+        confirmations = safety_config.get('confirmations', {})
+        
+        if setting_name in confirmations:
+            return confirmations[setting_name]
+        
+        # Use mode-based default
+        return mode_default if default else False
+    
+    def _enrich_collision_config(self, collision_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enrich collision config with run_mode and simulation_mode for safety decisions.
+        
+        Args:
+            collision_config: Base collision configuration from config file
+        
+        Returns:
+            Enriched collision configuration with run_mode and simulation_mode
+        """
+        enriched = collision_config.copy()
+        enriched['run_mode'] = self.config.get('run_mode', 'manual_confirm')
+        enriched['simulation_mode'] = self.config.get('robodk', {}).get('simulation_mode', 'simulate')
+        return enriched
     
     def _setup_logger(self) -> None:
         """Initialize logger from configuration."""
@@ -534,15 +654,16 @@ class RobotPnPCLI:
         
         station_file = REPO_ROOT / robodk_config.get('station_file', '')
         robot_model = robodk_config.get('robot_model', 'UR3e')
-        run_mode = robodk_config.get('run_mode', 'simulate')
+        # Use simulation_mode (new) or fall back to run_mode (legacy)
+        simulation_mode = robodk_config.get('simulation_mode', robodk_config.get('run_mode', 'simulate'))
         
-        self.logger.info(f"Initializing RoboDK (mode: {run_mode})...")
+        self.logger.info(f"Initializing RoboDK (simulation: {simulation_mode})...")
         
         try:
             self.robodk_manager = RoboDKManager(
                 station_file=station_file,
                 robot_model=robot_model,
-                run_mode=run_mode,
+                run_mode=simulation_mode,  # RoboDKManager expects 'run_mode' parameter
                 logger=self.logger
             )
             
@@ -846,7 +967,8 @@ class RobotPnPCLI:
         """
         target = step.get('target', '')
         move_type = step.get('move_type', 'joint')
-        confirm = step.get('confirm', self.config.get('safety', {}).get('confirm_before_movement', True))
+        # Use granular confirmation setting
+        confirm = step.get('confirm', self._get_confirmation_setting('movements', True))
         highlight = self.config.get('visualization', {}).get('highlight_target', True)
         
         if not target:
@@ -855,8 +977,9 @@ class RobotPnPCLI:
         
         self.logger.info(f"Moving to target: {target} (mode: {move_type})")
         
-        # Check if collision avoidance is enabled
+        # Check if collision avoidance is enabled (now enabled for ALL movements)
         collision_config = self.config.get('collision_avoidance', {})
+        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
         use_collision_avoidance = collision_config.get('enabled', True)
         
         if use_collision_avoidance:
@@ -890,7 +1013,8 @@ class RobotPnPCLI:
             type: capture
             confirm: true/false
         """
-        confirm = step.get('confirm', True)
+        # Use granular confirmation setting
+        confirm = step.get('confirm', self._get_confirmation_setting('captures', True))
         
         if confirm:
             response = input("\nProceed with capture/load? [Y/n]: ").strip().lower()
@@ -910,13 +1034,24 @@ class RobotPnPCLI:
             confirm: true/false
         """
         action = step.get('action', '').lower()
-        confirm = step.get('confirm', self.config.get('safety', {}).get('confirm_before_gripper', True))
+        # Use granular confirmation setting
+        confirm = step.get('confirm', self._get_confirmation_setting('gripper_actions', True))
         
         if action not in ['open', 'close']:
             self.logger.error(f"Invalid gripper action: '{action}' (must be 'open' or 'close')")
             return False
         
-        return self._activate_gripper(action, confirm)
+        # Determine if we should wait for MQTT confirmation
+        # Close (pick): send command but don't wait for confirmation
+        # Open (place_final): send command and wait for confirmation
+        wait_for_confirmation = (action == 'open')
+        
+        if action == 'close':
+            self.logger.info("Closing gripper at PICK (no MQTT confirmation wait)")
+        else:
+            self.logger.info("Opening gripper at PLACE_FINAL (waiting for MQTT confirmation)")
+        
+        return self._activate_gripper(action, confirm, wait_for_confirmation)
     
     def _execute_process_fruits_step(self, step: Dict[str, Any]) -> bool:
         """
@@ -997,29 +1132,134 @@ class RobotPnPCLI:
         """
         Execute the legacy hard-coded sequence.
         
-        This is the original implementation kept for backwards compatibility.
-        Sequence: Home → Foto → Capture/Load → Process Fruits → Home
+        For JSON mode: Single pass - Home → Foto → Load JSON → Process All Fruits → Home
+        For API/Vision modes: Continuous loop - Home → [Foto → Capture → Process Single Fruit]* → Home
+        
+        The loop continues until no detections are found or max_berries_per_run is reached.
         """
         self.logger.info("Executing legacy hard-coded sequence...")
+        
+        # Determine if we're in continuous capture mode (API/vision) or single-pass mode (JSON)
+        source_mode = self.config.get('pnp_data', {}).get('source_mode', 'json')
+        continuous_mode = source_mode in ['api', 'vision']
+        
+        # Get multi-berry configuration
+        multi_berry_config = self.config.get('multi_berry', {})
+        max_berries = multi_berry_config.get('max_berries_per_run', 100)
         
         # Step 1: Move to Home
         if not self._move_home():
             return False
         
-        # Step 2: Move to Foto position
-        if not self._move_foto():
-            return False
+        if continuous_mode:
+            # CONTINUOUS CAPTURE MODE (API/Vision)
+            # Loop: Foto → Capture → Pick ALL berries from capture → repeat
+            self.logger.info("=" * 60)
+            self.logger.info("CONTINUOUS CAPTURE MODE - Active until no detections")
+            self.logger.info(f"Max berries per run: {max_berries}")
+            self.logger.info("=" * 60)
+            
+            total_picked = 0
+            cycle_number = 0
+            
+            while total_picked < max_berries:
+                cycle_number += 1
+                self.logger.info("=" * 60)
+                self.logger.info(f"CAPTURE CYCLE #{cycle_number} - Total picked so far: {total_picked}/{max_berries}")
+                self.logger.info("=" * 60)
+                
+                # Move to Foto position
+                if not self._move_foto():
+                    self.logger.error("Failed to move to Foto position")
+                    break
+                
+                # Capture new detections
+                capture_success = self._load_pnp_data()
+                
+                if not capture_success:
+                    self.logger.warn("Failed to capture/load PnP data in this cycle")
+                    # In full_auto, continue trying; in semi_auto, ask user
+                    if multi_berry_config.get('mode', 'semi_auto') == 'semi_auto':
+                        response = input("\nRetry capture? [Y/n/q(uit)]: ").strip().lower()
+                        if response == 'n':
+                            continue  # Skip to next cycle
+                        elif response == 'q':
+                            break  # Exit loop
+                    else:
+                        # In full_auto, retry once then break if still failing
+                        self.logger.info("Retrying capture...")
+                        time.sleep(1)  # Brief delay before retry
+                        if not self._load_pnp_data():
+                            self.logger.error("Capture failed again, ending continuous mode")
+                            break
+                
+                # Check if any fruits were detected
+                if not self.selected_fruits:
+                    self.logger.info("No more berries detected - ending continuous capture")
+                    break
+                
+                # Calculate how many berries we can still pick
+                remaining_capacity = max_berries - total_picked
+                num_in_capture = len(self.selected_fruits)
+                
+                self.logger.info(f"Found {num_in_capture} berry/berries in this capture")
+                self.logger.info(f"Remaining capacity: {remaining_capacity} berries")
+                
+                # Limit the fruits to process based on remaining capacity
+                if num_in_capture > remaining_capacity:
+                    self.logger.info(f"Limiting to {remaining_capacity} berries (at max capacity)")
+                    self.selected_fruits = self.selected_fruits[:remaining_capacity]
+                
+                # Process all fruits from this capture
+                success = self._process_fruits()
+                
+                # Count actual successful picks (assuming all succeeded if _process_fruits returns True)
+                berries_processed = len(self.selected_fruits)
+                total_picked += berries_processed
+                
+                if not success:
+                    self.logger.error(f"Failed to process fruits in cycle #{cycle_number}")
+                    # In full_auto mode, continue to next cycle; in semi_auto, ask user
+                    if multi_berry_config.get('mode', 'semi_auto') == 'semi_auto':
+                        response = input("\nContinue with next capture cycle? [Y/n]: ").strip().lower()
+                        if response == 'n':
+                            break
+                
+                self.logger.info(f"Cycle #{cycle_number} complete. Processed: {berries_processed}, Total picked: {total_picked}/{max_berries}")
+                
+                # Check if we've reached the limit
+                if total_picked >= max_berries:
+                    self.logger.info(f"Reached max berries limit ({max_berries})")
+                    break
+            
+            # Summary
+            self.logger.info("=" * 60)
+            self.logger.info("CONTINUOUS CAPTURE MODE - COMPLETED")
+            self.logger.info(f"Total cycles: {cycle_number}")
+            self.logger.info(f"Total berries picked: {total_picked}")
+            self.logger.info("=" * 60)
+            
+        else:
+            # SINGLE-PASS MODE (JSON)
+            # Traditional flow: Home → Foto → Load → Process All → Home
+            self.logger.info("Single-pass mode (JSON) - processing all detections once")
+            
+            # Step 2: Move to Foto position
+            if not self._move_foto():
+                return False
+            
+            # Step 3: Load PnP data from JSON
+            if not self._load_pnp_data():
+                return False
+            
+            # Step 4: Process all fruits from the JSON file
+            if not self._process_fruits():
+                return False
         
-        # Step 3: Capture or load PnP data
-        if not self._load_pnp_data():
-            return False
-        
-        # Step 4: Process fruits (possibly multiple)
-        if not self._process_fruits():
-            return False
-        
-        # Step 5: Return home
+        # Step 5: Always return home before exiting
+        self.logger.info("Returning to HOME before exit...")
         if not self._move_home():
+            self.logger.error("Failed to return home")
             return False
         
         return True
@@ -1030,9 +1270,10 @@ class RobotPnPCLI:
         
         # Check if collision avoidance is enabled
         collision_config = self.config.get('collision_avoidance', {})
+        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
         use_collision_avoidance = collision_config.get('enabled', True)
         
-        confirm = self.config.get('safety', {}).get('confirm_before_movement', True)
+        confirm = self._get_confirmation_setting('movements', True)
         highlight = self.config.get('visualization', {}).get('highlight_target', True)
         
         # Get move_type from sequence configuration
@@ -1065,9 +1306,10 @@ class RobotPnPCLI:
         
         # Check if collision avoidance is enabled
         collision_config = self.config.get('collision_avoidance', {})
+        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
         use_collision_avoidance = collision_config.get('enabled', True)
         
-        confirm = self.config.get('safety', {}).get('confirm_before_movement', True)
+        confirm = self._get_confirmation_setting('movements', True)
         highlight = self.config.get('visualization', {}).get('highlight_target', True)
         
         # Get move_type from sequence configuration
@@ -1157,12 +1399,21 @@ class RobotPnPCLI:
                 self.logger.error(f"No detections above confidence threshold {min_conf}")
                 return False
             
-            # Let user select detection if multiple
+            # Multi-berry handling: In full_auto mode, process all detections
+            # In semi_auto or when only one detection, let user select
+            multi_berry_mode = self.config.get('multi_berry', {}).get('mode', 'semi_auto')
+            
             if len(detections) > 1:
-                selected = self.pnp_handler.select_detection_interactive(detections)
-                if selected is None:
-                    return False
-                self.selected_fruits = [selected]
+                if multi_berry_mode == 'full_auto':
+                    # Full auto: process all detections
+                    self.selected_fruits = detections
+                    self.logger.info(f"[Full Auto] Will process all {len(detections)} detected berries")
+                else:
+                    # Semi-auto: let user select one
+                    selected = self.pnp_handler.select_detection_interactive(detections)
+                    if selected is None:
+                        return False
+                    self.selected_fruits = [selected]
             else:
                 self.selected_fruits = detections
             
@@ -1209,12 +1460,19 @@ class RobotPnPCLI:
         """Load PnP data from JSON file."""
         json_config = self.config.get('pnp_data', {}).get('json', {})
         
-        # Get JSON file path
-        json_file_str = json_config.get('default_file', 'pickafresa_vision/captures/20251104_161710_data.json')
-        json_file = REPO_ROOT / json_file_str
+        # Get search directory and find latest JSON file
+        search_dir = REPO_ROOT / json_config.get('search_directory', 'pickafresa_vision/captures')
+        json_files = sorted(search_dir.glob("*_data.json"))
+        
+        if not json_files:
+            self.logger.error(f"No JSON files found in {search_dir}")
+            return False
+        
+        # Use latest file by default (sorted by name, which includes timestamp)
+        json_file = json_files[-1]  # Latest file
         
         # Prompt user to confirm or select different file
-        print(f"\nDefault JSON file: {json_file}")
+        print(f"\nLatest JSON file: {json_file.name}")
         response = input("Use this file? [Y/n/b(rowse)]: ").strip().lower()
         
         if response == 'n':
@@ -1225,9 +1483,6 @@ class RobotPnPCLI:
                     json_file = REPO_ROOT / file_input
         elif response == 'b':
             # List available JSON files
-            search_dir = REPO_ROOT / json_config.get('search_directory', 'pickafresa_vision/captures')
-            json_files = sorted(search_dir.glob("*_data.json"))
-            
             if json_files:
                 print("\nAvailable JSON files:")
                 for i, f in enumerate(json_files, 1):
@@ -1239,7 +1494,7 @@ class RobotPnPCLI:
                     if 0 <= idx < len(json_files):
                         json_file = json_files[idx]
                 except:
-                    self.logger.warn("Invalid selection, using default")
+                    self.logger.warn("Invalid selection, using latest")
         
         # Load detections
         min_conf = json_config.get('min_confidence', 0.5)
@@ -1255,12 +1510,21 @@ class RobotPnPCLI:
             self.logger.error("No valid detections in JSON file")
             return False
         
-        # Let user select detection if multiple
+        # Multi-berry handling: In full_auto mode, process all detections
+        # In semi_auto or when only one detection, let user select
+        multi_berry_mode = self.config.get('multi_berry', {}).get('mode', 'semi_auto')
+        
         if len(detections) > 1:
-            selected = self.pnp_handler.select_detection_interactive(detections)
-            if selected is None:
-                return False
-            self.selected_fruits = [selected]
+            if multi_berry_mode == 'full_auto':
+                # Full auto: process all detections
+                self.selected_fruits = detections
+                self.logger.info(f"[Full Auto] Will process all {len(detections)} detected berries")
+            else:
+                # Semi-auto: let user select one
+                selected = self.pnp_handler.select_detection_interactive(detections)
+                if selected is None:
+                    return False
+                self.selected_fruits = [selected]
         else:
             self.selected_fruits = detections
         
@@ -1298,8 +1562,7 @@ class RobotPnPCLI:
         self.logger.info("MULTI-BERRY PICKING MODE")
         self.logger.info("=" * 60)
         self.logger.info(f"Mode: {mode}")
-        self.logger.info(f"Total detections: {len(self.selected_fruits)}")
-        self.logger.info(f"Max berries per run: {max_berries}")
+        self.logger.info(f"Detections in this batch: {len(self.selected_fruits)}")
         self.logger.info(f"Sort by: {sort_by}")
         self.logger.info(f"Retry on failure: {retry_on_failure} (max {max_retries})")
         self.logger.info("=" * 60)
@@ -1307,10 +1570,8 @@ class RobotPnPCLI:
         # Sort fruits based on configuration
         fruits_to_process = self._sort_fruits(self.selected_fruits, sort_by)
         
-        # Limit to max berries
-        if len(fruits_to_process) > max_berries:
-            self.logger.info(f"Limiting to first {max_berries} berries")
-            fruits_to_process = fruits_to_process[:max_berries]
+        # NOTE: In continuous mode, the calling function handles max_berries limit
+        # Here we just process all fruits in self.selected_fruits
         
         # Track statistics
         total_attempts = 0
@@ -1324,7 +1585,30 @@ class RobotPnPCLI:
             self.logger.info(f"Class: {fruit.class_name}, Confidence: {fruit.confidence:.2f}")
             self.logger.info("=" * 60)
             
+            # CRITICAL: For berry #2 onwards, ensure robot is at correct position
+            # Must return to Home → Foto to ensure proper transformation
+            if i > 1:
+                self.logger.info("=" * 60)
+                self.logger.info(f"PRE-BERRY #{i} POSITIONING (Safety Protocol)")
+                self.logger.info("=" * 60)
+                
+                # Return to Home first
+                self.logger.info("Moving to Home before next berry...")
+                if not self._move_home():
+                    self.logger.error("Failed to return home before next berry - ABORTING for safety")
+                    return False
+                
+                # Move to Foto for proper transformation
+                self.logger.info("Moving to Foto for proper berry transformation...")
+                if not self._move_foto():
+                    self.logger.error("Failed to reach Foto position - ABORTING for safety")
+                    return False
+                
+                self.logger.info("[OK] Robot positioned at Foto for berry transformation")
+            
             # Confirmation between picks (if enabled)
+            # Use granular confirmation setting
+            confirm_between = self._get_confirmation_setting('between_berries', confirm_between)
             if confirm_between and mode == 'semi_auto':
                 response = input(f"\nProceed with berry {i}? [Y/n/q(uit)]: ").strip().lower()
                 if response == 'n':
@@ -1693,8 +1977,9 @@ class RobotPnPCLI:
                         
                         # Get collision config
                         collision_config = self.config.get('collision_avoidance', {})
+                        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
                         use_collision_avoidance = collision_config.get('enabled', True)
-                        confirm_movement = self.config.get('safety', {}).get('confirm_before_movement', True)
+                        confirm_movement = self._get_confirmation_setting('movements', True)
                         
                         # Execute post-pick targets
                         success = self._execute_post_pick_sequence(
@@ -1729,10 +2014,11 @@ class RobotPnPCLI:
         self.logger.info("Executing legacy per-berry sequence...")
         
         # Get configuration
-        confirm_movement = self.config.get('safety', {}).get('confirm_before_movement', True)
-        confirm_gripper = self.config.get('safety', {}).get('confirm_before_gripper', True)
+        confirm_movement = self._get_confirmation_setting('movements', True)
+        confirm_gripper = self._get_confirmation_setting('gripper_actions', True)
         highlight = self.config.get('visualization', {}).get('highlight_target', True)
         collision_config = self.config.get('collision_avoidance', {})
+        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
         use_collision_avoidance = collision_config.get('enabled', True)
         multi_stage_config = self.config.get('multi_stage_capture', {})
         pick_offset_config = self.config.get('transforms', {}).get('pick_offset', {})
@@ -1996,10 +2282,11 @@ class RobotPnPCLI:
             return None
         
         # Move to alignment target
-        confirm = self.config.get('safety', {}).get('confirm_before_movement', True)
+        confirm = self._get_confirmation_setting('movements', True)
         self.logger.info("Moving to alignment position...")
         
         collision_config = self.config.get('collision_avoidance', {})
+        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
         collision_enabled = collision_config.get('enabled', True)
         if collision_enabled:
             success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
@@ -2137,10 +2424,11 @@ class RobotPnPCLI:
                 return None
             
             # Move to stage3 position
-            confirm = self.config.get('safety', {}).get('confirm_before_movement', True)
+            confirm = self._get_confirmation_setting('movements', True)
             self.logger.info("Moving to stage3 capture position...")
             
             collision_config = self.config.get('collision_avoidance', {})
+            collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
             collision_enabled = collision_config.get('enabled', True)
             if collision_enabled:
                 success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
@@ -2279,9 +2567,15 @@ class RobotPnPCLI:
         
         # Get collision config
         collision_config = self.config.get('collision_avoidance', {})
+        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
         
         # Track current state for cumulative control
         T_current = T_base_pick.copy()  # Current Cartesian pose
+        
+        # DEBUG: Log initial state
+        self.logger.debug(f"T_base_pick position: [{T_base_pick[0,3]*1000:.1f}, {T_base_pick[1,3]*1000:.1f}, {T_base_pick[2,3]*1000:.1f}] mm")
+        self.logger.debug(f"T_base_fruit position: [{T_base_fruit[0,3]*1000:.1f}, {T_base_fruit[1,3]*1000:.1f}, {T_base_fruit[2,3]*1000:.1f}] mm")
+        self.logger.debug(f"T_current initialized to T_base_pick")
         
         # Get initial joint configuration at pick position
         # This is needed for cumulative joint-space control
@@ -2291,6 +2585,9 @@ class RobotPnPCLI:
         except Exception as e:
             self.logger.error(f"Failed to get initial joint configuration: {e}")
             return False
+        
+        # Track cumulative joint values (RoboDK may normalize angles, so we track the true cumulative values)
+        cumulative_joints = list(current_joints)
         
         for i, target_config in enumerate(target_configs, start=1):
             target_name = target_config.get('name', f'post_pick_{i}')
@@ -2310,11 +2607,32 @@ class RobotPnPCLI:
                     self.logger.error(f"Invalid joint_deltas_deg: expected 6 values, got {len(joint_deltas_deg)}")
                     return False
                 
-                # Apply cumulative joint deltas
-                target_joints = [current_joints[j] + joint_deltas_deg[j] for j in range(6)]
+                # Warn if using linear move type with large joint deltas (can't do multi-revolution)
+                if move_type == "linear":
+                    max_delta = max(abs(d) for d in joint_deltas_deg)
+                    if max_delta > 360:
+                        self.logger.warn(f"⚠️  WARNING: move_type='linear' with joint delta {max_delta:.1f}° (>360°)")
+                        self.logger.warn(f"   Linear moves use Cartesian interpolation and cannot execute multi-revolution rotations!")
+                        self.logger.warn(f"   Change move_type to 'joint' in config for proper multi-revolution movement.")
+                        self.logger.warn(f"   The robot may only rotate ±180° instead of the requested {max_delta:.1f}°")
                 
-                self.logger.info(f"  Current joints: {[f'{j:.2f}' for j in current_joints]}")
+                # Apply cumulative joint deltas to our tracked cumulative values
+                # This ensures we maintain the true cumulative angles even if RoboDK normalizes them
+                target_joints = [cumulative_joints[j] + joint_deltas_deg[j] for j in range(6)]
+                
+                self.logger.info(f"  Current joints: {[f'{j:.2f}' for j in cumulative_joints]}")
                 self.logger.info(f"  Target joints:  {[f'{j:.2f}' for j in target_joints]}")
+                
+                # Check for potential joint limit issues (common UR limits: ±360° per joint)
+                # Note: User should verify and update RoboDK joint limits if needed
+                for j_idx, (current, target) in enumerate(zip(cumulative_joints, target_joints)):
+                    if abs(target) > 360:
+                        self.logger.warn(f"⚠️  Joint {j_idx} (j{j_idx+1}) target: {target:.1f}° exceeds typical ±360° limits")
+                        self.logger.warn(f"   Verify RoboDK joint limits are configured to allow this range")
+                        self.logger.warn(f"   Recommended limits for multi-revolution: ±2160° (6 full rotations)")
+                
+                # Update cumulative joints for next iteration
+                cumulative_joints = list(target_joints)
                 
                 # Create target with joint configuration
                 robodk_target_name = f"{target_name}_{berry_label}"
@@ -2344,10 +2662,9 @@ class RobotPnPCLI:
                         self.logger.error(f"Failed to reach post-pick target {robodk_target_name}")
                         return False
                 
-                # Update current joint state for next iteration
+                # Update Cartesian pose for consistency (but keep using cumulative_joints for joint tracking)
                 try:
-                    current_joints = self.robodk_manager.robot.Joints().list()
-                    # Also update Cartesian pose for consistency
+                    # Update Cartesian pose for consistency
                     pose_robodk = self.robodk_manager.robot.Pose()
                     # Properly convert RoboDK Mat to numpy array
                     T_current = np.array([
@@ -2358,6 +2675,10 @@ class RobotPnPCLI:
                     ], dtype=np.float64)
                     T_current = np.squeeze(T_current)  # Remove any extra dimensions
                     T_current[:3, 3] /= 1000.0  # Convert to meters
+                    
+                    # Note: We do NOT update cumulative_joints from RoboDK readback
+                    # because RoboDK may normalize angles (e.g., 1088° -> 8°)
+                    # We maintain our own cumulative tracking above
                 except Exception as e:
                     self.logger.error(f"Failed to update robot state: {e}")
                     return False
@@ -2375,14 +2696,28 @@ class RobotPnPCLI:
                 # For absolute mode: always use original fruit frame for consistency
                 # For cumulative mode: use current frame (rotation affects subsequent offsets)
                 offset_m = np.array(offset_mm) / 1000.0
+                
+                # DEBUG: Log current state before applying offset
+                self.logger.debug(f"  T_current position BEFORE offset: [{T_current[0,3]*1000:.1f}, {T_current[1,3]*1000:.1f}, {T_current[2,3]*1000:.1f}] mm")
+                self.logger.debug(f"  offset_mm from config: {offset_mm}")
+                self.logger.debug(f"  offset_m (in meters): {offset_m}")
+                self.logger.debug(f"  rotation_mode: {rotation_mode}")
+                
                 if rotation_mode == 'absolute':
                     # Use original fruit frame for all offsets (consistent with prepick/pick behavior)
                     offset_in_base = T_base_fruit[:3, :3] @ offset_m
+                    self.logger.debug(f"  Using T_base_fruit rotation for offset transform (absolute mode)")
                 else:
                     # Use current accumulated frame (rotations affect subsequent offsets)
                     offset_in_base = T_current[:3, :3] @ offset_m
+                    self.logger.debug(f"  Using T_current rotation for offset transform (cumulative mode)")
+                
+                self.logger.debug(f"  offset_in_base: {offset_in_base * 1000} mm")
                 
                 T_current[:3, 3] += offset_in_base
+                
+                # DEBUG: Log position after applying offset
+                self.logger.debug(f"  T_current position AFTER offset: [{T_current[0,3]*1000:.1f}, {T_current[1,3]*1000:.1f}, {T_current[2,3]*1000:.1f}] mm")
                 
                 # Log position after translation but before rotation
                 self.logger.debug(f"Position after translation: [{T_current[0,3]*1000:.1f}, {T_current[1,3]*1000:.1f}, {T_current[2,3]*1000:.1f}] mm")
@@ -2438,9 +2773,10 @@ class RobotPnPCLI:
                         self.logger.error(f"Failed to reach post-pick target {robodk_target_name}")
                         return False
                 
-                # Update current joint state for next iteration (in case next target uses joint control)
+                # Update joint state for next iteration (in case next target uses joint control)
+                # For Cartesian moves, we DO read back from RoboDK since we don't know the joint solution
                 try:
-                    current_joints = self.robodk_manager.robot.Joints().list()
+                    cumulative_joints = self.robodk_manager.robot.Joints().list()
                 except Exception as e:
                     self.logger.error(f"Failed to update joint state: {e}")
                     return False
@@ -2450,8 +2786,18 @@ class RobotPnPCLI:
         self.logger.info("[OK] Post-pick detachment sequence complete")
         return True
     
-    def _activate_gripper(self, action: str, confirm: bool = True) -> bool:
-        """Activate gripper (open or close)."""
+    def _activate_gripper(self, action: str, confirm: bool = True, wait_for_confirmation: bool = True) -> bool:
+        """
+        Activate gripper (open or close).
+        
+        Args:
+            action: "open" or "close"
+            confirm: Whether to ask user before sending command
+            wait_for_confirmation: Whether to wait for MQTT state confirmation
+        
+        Returns:
+            True if successful, False otherwise
+        """
         if self.mqtt_controller is None:
             self.logger.warn("MQTT not available, skipping gripper action...")
             
@@ -2462,7 +2808,7 @@ class RobotPnPCLI:
             
             return True
         
-        # User confirmation
+        # User confirmation before sending command
         if confirm:
             print(f"\n{'='*60}")
             print(f"Ready to {action.upper()} gripper")
@@ -2483,19 +2829,22 @@ class RobotPnPCLI:
             self.mqtt_controller.open_gripper()
             desired_state = self.config.get('mqtt', {}).get('states', {}).get('deflated', 'desinflado')
         
-        # Wait for confirmation
-        if mqtt_config.get('enabled', True):
-            timeout = mqtt_config.get('timeout_seconds', 10.0)
+        # Wait for MQTT state confirmation (only if wait_for_confirmation is True)
+        if wait_for_confirmation and mqtt_config.get('enabled', True):
+            timeout = mqtt_config.get('timeout_seconds', 120.0)
             allow_override = mqtt_config.get('allow_override', True)
             override_key = mqtt_config.get('override_key', 'c')
+            confirm_on_timeout = mqtt_config.get('confirm_on_timeout', True)
             
             return self.mqtt_controller.wait_for_state(
                 desired_state=desired_state,
                 timeout=timeout,
                 allow_override=allow_override,
-                override_key=override_key
+                override_key=override_key,
+                confirm_on_timeout=confirm_on_timeout
             )
         
+        # If not waiting for confirmation, just return success
         return True
     
     def _cleanup(self) -> None:
