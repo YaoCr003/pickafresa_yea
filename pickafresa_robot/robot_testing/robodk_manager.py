@@ -1012,25 +1012,67 @@ class RoboDKManager:
         self._log_error("All fallback strategies exhausted")
         self._log_error("="*60)
         
-        # Ask user what to do
-        print("\nAll collision avoidance strategies failed. Options:")
-        print("  1. Abort movement (safe)")
-        print("  2. Force movement anyway (DANGEROUS - use only in simulation)")
-        print("  3. Manual intervention required")
+        # Get run_mode and simulation_mode from collision_config
+        run_mode = collision_config.get('run_mode', 'manual_confirm')
+        simulation_mode = collision_config.get('simulation_mode', 'simulate')
+        is_autonomous = run_mode == 'autonomous'
+        is_real_robot = simulation_mode == 'real_robot'
         
-        response = input("Choose option [1/2/3]: ").strip()
+        # CRITICAL SAFETY: Always prompt user about collision
+        # In autonomous mode with simulation, auto-abort
+        # In real_robot mode, NEVER allow force move
+        print("\n" + "="*60)
+        print("⚠️  COLLISION WARNING - MOVEMENT CANNOT BE COMPLETED SAFELY")
+        print("="*60)
+        print(f"Target: {target_name}")
+        print(f"Mode: {run_mode} | Robot: {simulation_mode}")
+        print("="*60)
         
-        if response == "2":
-            self._log_warn("USER OVERRIDE: Forcing movement despite collision risk")
-            # Disable collision checking and force move
-            self.RDK.setCollisionActive(0)
-            result = self.move_to_target(target_name, move_type, confirm=False, highlight=False)
-            self.RDK.setCollisionActive(1)  # Re-enable
-            message = "Movement forced by user (collision checking disabled)" if result else "Forced movement failed"
-            return (result, message)
+        if is_real_robot:
+            # REAL ROBOT: Absolute safety - no force option
+            print("❌ REAL ROBOT MODE - Movement automatically ABORTED for safety")
+            print("   Collision detected with physical robot")
+            print("   Manual intervention or RoboDK station adjustment required")
+            self._log_error("Real robot mode: Auto-abort due to collision (safety protocol)")
+            return (False, "Collision detected - auto-aborted for real robot safety")
+        
+        elif is_autonomous:
+            # AUTONOMOUS + SIMULATION: Auto-abort but inform user
+            print("🤖 AUTONOMOUS MODE - Movement automatically ABORTED")
+            print("   Collision detected in simulation")
+            print("   System will skip this operation and continue if possible")
+            self._log_warn("Autonomous mode: Auto-abort due to collision")
+            input("\nPress Enter to acknowledge and continue...")
+            return (False, "Collision detected - auto-aborted in autonomous mode")
+        
         else:
-            self._log_info("Movement aborted by user")
-            return (False, "Collision detected")
+            # MANUAL MODE + SIMULATION: Give user options
+            print("\nAll collision avoidance strategies failed. Options:")
+            print("  1. Abort movement (SAFE - recommended)")
+            print("  2. Force movement anyway (DANGEROUS - simulation only)")
+            print("  3. Manually intervene in RoboDK station")
+            
+            response = input("\nChoose option [1/2/3]: ").strip()
+            
+            if response == "2":
+                # Only allow force in simulation mode
+                self._log_warn("⚠️  USER OVERRIDE: Forcing movement despite collision risk")
+                self._log_warn("   This should ONLY be used in simulation for testing!")
+                confirm_force = input("Type 'FORCE' to confirm dangerous override: ").strip()
+                
+                if confirm_force == "FORCE":
+                    # Disable collision checking and force move
+                    self.RDK.setCollisionActive(0)
+                    result = self.move_to_target(target_name, move_type, confirm=False, highlight=False)
+                    self.RDK.setCollisionActive(1)  # Re-enable
+                    message = "Movement forced by user (collision checking disabled)" if result else "Forced movement failed"
+                    return (result, message)
+                else:
+                    self._log_info("Force override cancelled")
+                    return (False, "User cancelled force override")
+            else:
+                self._log_info("Movement aborted by user")
+                return (False, "Collision detected - movement aborted")
     
     def _try_alternative_ik(
         self,
