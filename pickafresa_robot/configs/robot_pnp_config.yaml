@@ -1,7 +1,23 @@
-# Robot Pick-and-Place Testing Tool Configuration
-# Configuration for interactive PnP-robot connection testing with RoboDK
+# Robot Pick-and-Place System Configuration
+# Configuration for robot pick-and-place operations (CLI, Service, Manager, Remote)
 #
 # @aldrick-t, 2025
+
+# ==============================================================================
+# SERVICE CONFIGURATION (robot_pnp_service)
+# ==============================================================================
+service:
+  host: "127.0.0.1"  # Service bind address
+  port: 5556         # Service port (vision service uses 5555)
+  
+# ==============================================================================
+# SUPABASE CONFIGURATION (robot_pnp_remote)
+# ==============================================================================
+supabase:
+  enabled: false  # Enable cloud logging
+  url: ""         # Supabase project URL
+  key: ""         # Supabase anon/service key
+  table_name: "robot_operations"  # Table for operation logs
 
 # ==============================================================================
 # RUN MODE CONFIGURATION
@@ -17,7 +33,7 @@ run_mode: "autonomous"  # Options: "manual_confirm", "autonomous"
 robodk:
   station_file: "pickafresa_robot/rdk/SETUP Fresas.rdk"  # Relative to repo root
   robot_model: "UR3e"  # Default robot model (can be changed during runtime)
-  simulation_mode: "simulate"  # Options: "simulate", "real_robot"
+  simulation_mode: "real_robot"  # Options: "simulate", "real_robot"
   
   # Auto-discover targets from RDK station (true = auto, false = use predefined)
   auto_discover_targets: true
@@ -144,13 +160,13 @@ post_pick:
       #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
       #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15° about X-axis (partial reset)
       move_type: "joint"                 # Movement type: "linear" or "joint" - MUST use "joint" for multi-revolution
-      joint_deltas_deg: [0, 0, -20, 0, 0, 1260]  # Joint control: 3.5 full rotations on j6 (tool flange)
+      joint_deltas_deg: [0, 0, -20, 0, 0, 360]  # Joint control: 3.5 full rotations on j6 (tool flange)
 
     - name: "post_pick_reset"
       #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
       #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15° about X-axis (partial reset)
       move_type: "joint"                 # Movement type: "linear" or "joint" - MUST use "joint" for multi-revolution
-      joint_deltas_deg: [0, 0, 0, 0, 0, -1080]  # Joint control: unwind 3 rotations on j6 (tool flange)
+      joint_deltas_deg: [0, 0, 0, 0, 0, -360]  # Joint control: unwind 3 rotations on j6 (tool flange)
 
 
 # ALTERNATIVE POST-PICK CONFIGURATION
@@ -314,7 +330,7 @@ multi_berry:
 # MQTT GRIPPER CONTROL
 # ==============================================================================
 mqtt:
-  enabled: false  # Enable/disable MQTT (can override at runtime)
+  enabled: true  # Enable/disable MQTT (can override at runtime)
   broker_ip: "192.168.1.114"
   broker_port: 1883
   keepalive: 60
@@ -389,13 +405,20 @@ vision_service:
   # Fallback behavior
   fallback_to_direct: true            # If service unavailable, use direct capture (if available)
   require_in_auto_mode: true          # Require service in auto/vision mode
+  
+  # Offline/Debug Mode (NEW)
+  # If vision service is unavailable during initialization, the controller will:
+  # 1. Mark itself as in "offline mode"
+  # 2. Prompt the user to select a JSON data file from pickafresa_vision/captures/
+  # 3. Load detections from that JSON file instead of requesting live captures
+  # This allows testing pick sequences with pre-recorded detection data
 
 # ==============================================================================
 # PNP DATA SOURCE CONFIGURATION
 # ==============================================================================
 pnp_data:
   # Source mode: "vision" (vision service), "api" (live direct), "json" (offline file)
-  source_mode: "json"  # Options: "vision", "api", "json"
+  source_mode: "vision"  # Options: "vision", "api", "json"
   
   # API mode settings (when source_mode = "api")
   api:
