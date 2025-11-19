@@ -12,6 +12,8 @@ Features:
 - User confirmations at each step for safety
 - ROS2-style logging
 - Multi-berry support
+- Continuous operation mode with state machine
+- Pick verification and statistics tracking
 
 Usage:
     python pickafresa_robot/robot_testing/robot_pnp_cli.py [--config path/to/config.yaml]
@@ -25,6 +27,9 @@ import platform
 import argparse
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from enum import Enum
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
 import numpy as np
 import cv2
 
@@ -67,15 +72,141 @@ except ImportError:
     HAVE_SOCKET = False
 
 
+# ==============================================================================
+# STATE MACHINE & STATISTICS
+# ==============================================================================
+
+class OperationState(Enum):
+    """Robot operation states for continuous operation mode."""
+    STARTUP = "startup"                  # Initial state, loading configuration
+    MOVING_TO_FOTO = "moving_to_foto"    # Moving to Foto/idle position
+    STANDBY = "standby"                  # At Foto, waiting for trigger (timer or manual)
+    CAPTURING = "capturing"              # Requesting capture from vision service
+    PROCESSING = "processing"            # Processing detected berries (pick-place loop)
+    VERIFYING = "verifying"              # Verifying pick success after placement
+    SHUTDOWN = "shutdown"                # Graceful shutdown, returning home
+
+
+@dataclass
+class SessionStatistics:
+    """Session statistics for continuous operation mode."""
+    # Counters
+    total_berries_picked: int = 0
+    successful_picks: int = 0
+    failed_picks: int = 0
+    total_captures: int = 0
+    verification_captures: int = 0
+    standby_cycles: int = 0
+    
+    # Per-cycle tracking
+    berries_per_cycle: List[int] = field(default_factory=list)
+    
+    # Timing
+    session_start_time: Optional[datetime] = None
+    session_end_time: Optional[datetime] = None
+    
+    # State tracking
+    current_state: OperationState = OperationState.STARTUP
+    last_capture_time: Optional[datetime] = None
+    
+    def start_session(self):
+        """Mark session start."""
+        self.session_start_time = datetime.now()
+    
+    def end_session(self):
+        """Mark session end."""
+        self.session_end_time = datetime.now()
+    
+    def get_session_duration(self) -> timedelta:
+        """Get total session duration."""
+        if self.session_start_time is None:
+            return timedelta(0)
+        end_time = self.session_end_time or datetime.now()
+        return end_time - self.session_start_time
+    
+    def record_capture(self, is_verification: bool = False):
+        """Record a capture event."""
+        self.total_captures += 1
+        if is_verification:
+            self.verification_captures += 1
+        self.last_capture_time = datetime.now()
+    
+    def record_cycle(self, berries_in_cycle: int):
+        """Record a complete capture cycle."""
+        self.berries_per_cycle.append(berries_in_cycle)
+    
+    def record_pick(self, success: bool):
+        """Record a pick attempt."""
+        self.total_berries_picked += 1
+        if success:
+            self.successful_picks += 1
+        else:
+            self.failed_picks += 1
+    
+    def record_standby_cycle(self):
+        """Record a standby wait cycle."""
+        self.standby_cycles += 1
+    
+    def get_summary(self, format_type: str = "detailed") -> str:
+        """
+        Get formatted statistics summary.
+        
+        Args:
+            format_type: "summary" or "detailed"
+        
+        Returns:
+            Formatted statistics string
+        """
+        duration = self.get_session_duration()
+        hours, remainder = divmod(int(duration.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        if format_type == "summary":
+            return (
+                f"Session: {hours:02d}:{minutes:02d}:{seconds:02d} | "
+                f"Berries: {self.total_berries_picked} "
+                f"(✓{self.successful_picks} ✗{self.failed_picks}) | "
+                f"Captures: {self.total_captures} | "
+                f"Standby cycles: {self.standby_cycles}"
+            )
+        else:  # detailed
+            lines = [
+                "=" * 70,
+                "SESSION STATISTICS",
+                "=" * 70,
+                f"Duration:                {hours:02d}:{minutes:02d}:{seconds:02d}",
+                f"Current State:           {self.current_state.value}",
+                "",
+                "BERRIES:",
+                f"  Total picked:          {self.total_berries_picked}",
+                f"  Successful:            {self.successful_picks}",
+                f"  Failed:                {self.failed_picks}",
+                f"  Success rate:          {self.successful_picks / max(self.total_berries_picked, 1) * 100:.1f}%",
+                "",
+                "CAPTURES:",
+                f"  Total captures:        {self.total_captures}",
+                f"  Verification captures: {self.verification_captures}",
+                f"  Regular captures:      {self.total_captures - self.verification_captures}",
+                "",
+                "OPERATION:",
+                f"  Capture cycles:        {len(self.berries_per_cycle)}",
+                f"  Standby cycles:        {self.standby_cycles}",
+                f"  Avg berries/cycle:     {sum(self.berries_per_cycle) / max(len(self.berries_per_cycle), 1):.1f}",
+                "=" * 70
+            ]
+            return "\n".join(lines)
+
+
 class VisionServiceError(Exception):
     """Raised when vision service is not available or fails."""
     pass
 
 
 class VisionServiceClient:
-    """Client for communicating with the vision service via IPC."""
+    """Client for communicating with the vision service via IPC with automatic reconnection."""
     
-    def __init__(self, host: str = "127.0.0.1", port: int = 5555, timeout: float = 30.0):
+    def __init__(self, host: str = "127.0.0.1", port: int = 5555, timeout: float = 30.0, 
+                 max_retries: int = 3, retry_delay: float = 2.0):
         """
         Initialize vision service client.
         
@@ -83,12 +214,17 @@ class VisionServiceClient:
             host: Vision service host address
             port: Vision service port
             timeout: Socket timeout in seconds
+            max_retries: Maximum number of reconnection attempts
+            retry_delay: Delay between retry attempts in seconds
         """
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
         self.socket = None
         self.logger = None
+        self.is_connected = False
     
     def set_logger(self, logger):
         """Set logger instance."""
@@ -115,17 +251,28 @@ class VisionServiceClient:
             raise VisionServiceError("Socket module not available")
         
         try:
+            # Close existing socket if any
+            if self.socket:
+                try:
+                    self.socket.close()
+                except:
+                    pass
+            
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(self.timeout)
             self.socket.connect((self.host, self.port))
+            self.is_connected = True
             self._log("info", f"[OK] Connected to vision service at {self.host}:{self.port}")
             return True
         
         except socket.timeout:
+            self.is_connected = False
             raise VisionServiceError(f"Connection timeout to {self.host}:{self.port}")
         except ConnectionRefusedError:
+            self.is_connected = False
             raise VisionServiceError(f"Connection refused by {self.host}:{self.port} - Is vision service running?")
         except Exception as e:
+            self.is_connected = False
             raise VisionServiceError(f"Failed to connect to vision service: {e}")
     
     def disconnect(self):
@@ -137,23 +284,56 @@ class VisionServiceClient:
             except:
                 pass
             self.socket = None
+            self.is_connected = False
+    
+    def reconnect(self) -> bool:
+        """
+        Attempt to reconnect to vision service.
+        
+        Returns:
+            True if reconnection successful, False otherwise
+        """
+        self._log("warn", "Attempting to reconnect to vision service...")
+        
+        # Disconnect existing connection
+        self.disconnect()
+        
+        # Try to reconnect with retries
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                self._log("info", f"Reconnection attempt {attempt}/{self.max_retries}...")
+                time.sleep(self.retry_delay)
+                
+                if self.connect():
+                    self._log("info", "[OK] Reconnection successful")
+                    return True
+                    
+            except VisionServiceError as e:
+                self._log("warn", f"Reconnection attempt {attempt} failed: {e}")
+                if attempt < self.max_retries:
+                    continue
+                else:
+                    self._log("error", "All reconnection attempts exhausted")
+                    return False
+        
+        return False
     
     def check_status(self) -> Dict[str, Any]:
         """
-        Check vision service status.
+        Check vision service status with automatic reconnection.
         
         Returns:
             Status dictionary with keys: alive, ready, error
         
         Raises:
-            VisionServiceError: If request fails
+            VisionServiceError: If request fails after reconnection attempts
         """
         request = {"command": "status"}
-        return self._send_request(request)
+        return self._send_request_with_retry(request)
     
     def request_capture(self, multi_frame: bool = False, num_frames: int = 10) -> Dict[str, Any]:
         """
-        Request a capture from vision service.
+        Request a capture from vision service with automatic reconnection.
         
         Args:
             multi_frame: Enable multi-frame averaging
@@ -164,14 +344,69 @@ class VisionServiceClient:
             Each detection contains: class_name, confidence, bbox, T_cam_fruit, T_base_fruit
         
         Raises:
-            VisionServiceError: If request fails
+            VisionServiceError: If request fails after reconnection attempts
         """
         request = {
             "command": "capture",
             "multi_frame": multi_frame,
             "num_frames": num_frames
         }
-        return self._send_request(request)
+        return self._send_request_with_retry(request)
+    
+    def _send_request_with_retry(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send request with automatic reconnection on failure.
+        
+        Args:
+            request: Request dictionary
+        
+        Returns:
+            Response dictionary
+        
+        Raises:
+            VisionServiceError: If communication fails after all retries
+        """
+        last_error = None
+        
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                # Ensure we're connected
+                if not self.is_connected or not self.socket:
+                    self._log("warn", "Not connected, attempting to reconnect...")
+                    if not self.reconnect():
+                        raise VisionServiceError("Failed to reconnect to vision service")
+                
+                # Send request
+                return self._send_request(request)
+                
+            except VisionServiceError as e:
+                last_error = e
+                error_str = str(e)
+                
+                # Check if it's a connection error (broken pipe, connection reset, etc.)
+                is_connection_error = any(err in error_str.lower() for err in [
+                    'broken pipe', 'connection', 'closed', 'reset', 'errno 32', 'errno 104'
+                ])
+                
+                if is_connection_error:
+                    self._log("warn", f"Connection error detected: {e}")
+                    self.is_connected = False
+                    
+                    if attempt < self.max_retries:
+                        self._log("info", f"Retrying request (attempt {attempt + 1}/{self.max_retries})...")
+                        
+                        # Try to reconnect
+                        if not self.reconnect():
+                            continue
+                    else:
+                        self._log("error", f"Request failed after {self.max_retries} attempts: {e}")
+                        raise
+                else:
+                    # Non-connection error, don't retry
+                    raise
+        
+        # If we get here, all retries failed
+        raise VisionServiceError(f"Request failed after {self.max_retries} attempts: {last_error}")
     
     def _send_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -199,6 +434,7 @@ class VisionServiceClient:
             while True:
                 chunk = self.socket.recv(4096)
                 if not chunk:
+                    self.is_connected = False
                     raise VisionServiceError("Connection closed by vision service")
                 response_data += chunk
                 if b'\n' in response_data:
@@ -211,10 +447,15 @@ class VisionServiceClient:
             return response
         
         except socket.timeout:
+            self.is_connected = False
             raise VisionServiceError("Request timeout - vision service not responding")
         except json.JSONDecodeError as e:
             raise VisionServiceError(f"Invalid JSON response: {e}")
+        except (BrokenPipeError, ConnectionResetError, OSError) as e:
+            self.is_connected = False
+            raise VisionServiceError(f"Communication error: {e}")
         except Exception as e:
+            self.is_connected = False
             raise VisionServiceError(f"Communication error: {e}")
 
 
@@ -240,6 +481,11 @@ class RobotPnPCLI:
         self.use_config = True
         self.selected_fruits: List[FruitDetection] = []
         self.use_vision_service = False  # Whether to use vision service or direct capture
+        
+        # Continuous operation state
+        self.current_state: OperationState = OperationState.STARTUP
+        self.statistics: SessionStatistics = SessionStatistics()
+        self.shutdown_requested: bool = False
         
         print("\n" + "="*70)
         print(" "*15 + "ROBOT PNP TESTING TOOL")
@@ -284,6 +530,15 @@ class RobotPnPCLI:
             else:
                 print("\n!!! Program interrupted by user (Ctrl+C) !!!")
                 print("Attempting to return robot to HOME position...")
+            
+            # End statistics session
+            if hasattr(self, 'statistics'):
+                self.statistics.end_session()
+                
+                # Display final statistics if enabled
+                stats_config = self.config.get('statistics', {}).get('display', {})
+                if stats_config.get('show_on_shutdown', True):
+                    print("\n" + self.statistics.get_summary(format_type=stats_config.get('format', 'detailed')))
             
             # Try to return home before exit
             try:
@@ -795,7 +1050,18 @@ class RobotPnPCLI:
             port = vision_config.get('port', 5555)
             timeout = vision_config.get('timeout', 30.0)
             
-            self.vision_client = VisionServiceClient(host=host, port=port, timeout=timeout)
+            # Get reconnection parameters
+            reconnection_config = vision_config.get('reconnection', {})
+            max_retries = reconnection_config.get('max_retries', 3)
+            retry_delay = reconnection_config.get('retry_delay', 2.0)
+            
+            self.vision_client = VisionServiceClient(
+                host=host, 
+                port=port, 
+                timeout=timeout,
+                max_retries=max_retries,
+                retry_delay=retry_delay
+            )
             self.vision_client.set_logger(self.logger)
             
             # Try to connect
@@ -860,9 +1126,338 @@ class RobotPnPCLI:
         
         return default
     
+    # ==========================================================================
+    # CONTINUOUS OPERATION MODE METHODS
+    # ==========================================================================
+    
+    def _execute_continuous_operation(self) -> bool:
+        """
+        Execute continuous operation mode with state machine.
+        
+        State flow:
+            STARTUP -> MOVING_TO_FOTO -> STANDBY -> 
+            [timer/manual trigger] -> CAPTURING -> PROCESSING -> VERIFYING -> 
+            STANDBY (loop until shutdown)
+        
+        Returns:
+            True if successful, False on error
+        """
+        self.logger.info("="*70)
+        self.logger.info("CONTINUOUS OPERATION MODE")
+        self.logger.info("="*70)
+        
+        # Start session tracking
+        self.statistics.start_session()
+        
+        # Initial move to Home then Foto
+        self.current_state = OperationState.MOVING_TO_FOTO
+        self.statistics.current_state = self.current_state
+        
+        self.logger.info("[State: MOVING_TO_FOTO] Moving to Foto (idle) position...")
+        
+        # Move Home first for safety
+        if not self._move_home():
+            return False
+        
+        # Move to Foto
+        if not self._move_foto():
+            return False
+        
+        # Enter main continuous loop
+        while not self.shutdown_requested:
+            # STANDBY state
+            self.current_state = OperationState.STANDBY
+            self.statistics.current_state = self.current_state
+            
+            self.logger.info("="*70)
+            self.logger.info("[State: STANDBY] At Foto position - waiting for trigger")
+            self.logger.info("="*70)
+            
+            # Wait for trigger (timer or manual)
+            trigger = self._standby_wait()
+            
+            if trigger == "shutdown":
+                self.shutdown_requested = True
+                break
+            elif trigger == "capture":
+                # CAPTURING state
+                self.current_state = OperationState.CAPTURING
+                self.statistics.current_state = self.current_state
+                
+                self.logger.info("[State: CAPTURING] Requesting capture from vision service...")
+                
+                # Load PnP data
+                capture_success = self._load_pnp_data()
+                
+                if not capture_success:
+                    self.logger.info("Capture failed or no detections - returning to standby")
+                    continue
+                
+                # Record capture
+                self.statistics.record_capture(is_verification=False)
+                
+                # Check if any ripe berries detected
+                ripe_berries = [f for f in self.selected_fruits if f.class_name == "ripe"]
+                
+                if not ripe_berries:
+                    self.logger.info("No ripe berries detected - returning to standby")
+                    continue
+                
+                self.logger.info(f"Found {len(ripe_berries)} ripe berry/berries")
+                
+                # In manual_confirm mode, ask user before processing
+                if self._get_confirmation_setting('captures', True):
+                    response = input(f"\nProcess {len(ripe_berries)} ripe berry/berries? [Y/n]: ").strip().lower()
+                    if response == 'n':
+                        self.logger.warn("User declined processing - returning to standby")
+                        continue
+                
+                # PROCESSING state
+                self.current_state = OperationState.PROCESSING
+                self.statistics.current_state = self.current_state
+                
+                self.logger.info(f"[State: PROCESSING] Processing {len(ripe_berries)} berry/berries...")
+                
+                # Process berries
+                berries_before = len(ripe_berries)
+                process_success = self._process_fruits()
+                
+                if not process_success:
+                    self.logger.warn("Berry processing encountered errors")
+                
+                # Record cycle
+                self.statistics.record_cycle(berries_before)
+                
+                # VERIFYING state
+                self.current_state = OperationState.VERIFYING
+                self.statistics.current_state = self.current_state
+                
+                self.logger.info("[State: VERIFYING] Verifying pick success...")
+                
+                # Verify pick success
+                verification_success = self._verify_pick_success()
+                
+                if verification_success:
+                    self.logger.info("[OK] Pick verification successful - all berries picked")
+                else:
+                    self.logger.info("Pick verification found remaining berries - will retry in next cycle")
+                
+                # Loop back to STANDBY
+        
+        # SHUTDOWN state
+        self.current_state = OperationState.SHUTDOWN
+        self.statistics.current_state = self.current_state
+        
+        self.logger.info("="*70)
+        self.logger.info("[State: SHUTDOWN] Shutting down gracefully...")
+        self.logger.info("="*70)
+        
+        # Return to home
+        self.logger.info("Returning to HOME position...")
+        if not self._move_home():
+            self.logger.error("Failed to return home during shutdown")
+        
+        # End session
+        self.statistics.end_session()
+        
+        # Display final statistics
+        stats_config = self.config.get('statistics', {}).get('display', {})
+        if stats_config.get('show_on_shutdown', True):
+            print("\n" + self.statistics.get_summary(format_type=stats_config.get('format', 'detailed')))
+        
+        return True
+    
+    def _standby_wait(self) -> str:
+        """
+        Wait at standby for trigger event.
+        
+        Returns:
+            "capture" - Manual capture requested or timer expired
+            "shutdown" - Shutdown requested
+        """
+        continuous_config = self.config.get('continuous_operation', {})
+        standby_config = continuous_config.get('standby', {})
+        stats_config = self.config.get('statistics', {}).get('display', {})
+        
+        interval = standby_config.get('interval_seconds', 60)
+        manual_capture_key = standby_config.get('manual_capture_key', 'c')
+        allow_manual = standby_config.get('menu', {}).get('allow_manual_capture', True)
+        show_stats = standby_config.get('menu', {}).get('show_statistics', True)
+        show_timer = standby_config.get('menu', {}).get('show_timer', True)
+        
+        # Record standby cycle
+        self.statistics.record_standby_cycle()
+        
+        # Display current statistics
+        if show_stats:
+            stats_format = stats_config.get('format', 'summary')
+            print("\n" + self.statistics.get_summary(format_type=stats_format))
+        
+        # Display menu
+        print("\n" + "="*70)
+        print("STANDBY MENU")
+        print("="*70)
+        if show_timer:
+            print(f"Next auto-capture in: {interval} seconds")
+        print("\nOptions:")
+        if allow_manual:
+            print(f"  [{manual_capture_key}] Trigger capture now")
+        print("  [q] Shutdown and return to Home")
+        if show_timer:
+            print("  [Enter] Wait for auto-capture timer")
+        print("="*70)
+        
+        # Prompt-based approach (works on all platforms)
+        print(f"\nEnter command ('{manual_capture_key}' = capture, 'q' = quit, Enter = wait {interval}s): ", end='', flush=True)
+        
+        # Use select for timeout on input (works on macOS/Linux)
+        import select
+        import sys
+        
+        # Check if stdin is available for non-blocking read
+        if hasattr(select, 'select'):
+            ready, _, _ = select.select([sys.stdin], [], [], interval)
+            
+            if ready:
+                # User provided input
+                user_input = sys.stdin.readline().strip().lower()
+                
+                if user_input == manual_capture_key:
+                    self.logger.info("Manual capture triggered")
+                    return "capture"
+                elif user_input == 'q':
+                    self.logger.info("Shutdown requested")
+                    return "shutdown"
+                else:
+                    # Invalid input or just Enter - trigger capture anyway
+                    self.logger.info("Triggering capture (timer/default)")
+                    return "capture"
+            else:
+                # Timeout - auto-capture
+                print()  # New line after timeout
+                self.logger.info("Auto-capture timer expired - triggering capture")
+                return "capture"
+        else:
+            # Fallback: blocking input (Windows)
+            user_input = input().strip().lower()
+            
+            if user_input == manual_capture_key:
+                self.logger.info("Manual capture triggered")
+                return "capture"
+            elif user_input == 'q':
+                self.logger.info("Shutdown requested")
+                return "shutdown"
+            else:
+                self.logger.info("Triggering capture")
+                return "capture"
+    
+    def _verify_pick_success(self) -> bool:
+        """
+        Verify pick success by returning to Foto and checking for remaining ripe berries.
+        
+        Returns:
+            True if no ripe berries detected (successful pick)
+            False if ripe berries remain
+        """
+        verification_config = self.config.get('continuous_operation', {}).get('verification', {})
+        
+        if not verification_config.get('enabled', True):
+            self.logger.info("Pick verification disabled - skipping")
+            return True
+        
+        max_ripe_allowed = verification_config.get('max_ripe_berries', 0)
+        show_results = verification_config.get('show_verification_results', True)
+        
+        self.logger.info("Moving to Foto for pick verification...")
+        
+        # Return to Foto position
+        if not self._move_foto():
+            self.logger.error("Failed to return to Foto for verification")
+            return False
+        
+        # Capture and check for ripe berries
+        self.logger.info("Capturing verification image...")
+        
+        capture_success = self._load_pnp_data()
+        
+        if not capture_success:
+            self.logger.warn("Verification capture failed - assuming success")
+            return True
+        
+        # Record verification capture
+        self.statistics.record_capture(is_verification=True)
+        
+        # Count ripe berries
+        ripe_berries = [f for f in self.selected_fruits if f.class_name == "ripe"]
+        num_ripe = len(ripe_berries)
+        
+        if show_results:
+            self.logger.info(f"Verification result: {num_ripe} ripe berry/berries detected")
+        
+        # Determine success
+        success = num_ripe <= max_ripe_allowed
+        
+        # Handle verification result based on run_mode
+        run_mode = self.config.get('run_mode', 'manual_confirm')
+        verification_behavior_config = self.config.get('continuous_operation', {}).get('standby', {}).get('verification_behavior', {})
+        behavior_mode = verification_behavior_config.get('mode', 'auto')
+        
+        # Determine which option to use
+        if behavior_mode == 'auto':
+            # Use run_mode to determine behavior
+            if run_mode == 'autonomous':
+                # Option A: Go to standby immediately
+                if success:
+                    self.logger.info("[Option A] Verification successful - returning to standby")
+                return success
+            else:  # manual_confirm
+                # Option B: Display success and wait for user input
+                if success:
+                    print("\n" + "="*70)
+                    print("✓ PICK VERIFICATION SUCCESSFUL")
+                    print("="*70)
+                    print(f"All ripe berries have been successfully picked!")
+                    print(f"Verification found: {num_ripe} ripe berry/berries (max allowed: {max_ripe_allowed})")
+                    print("="*70)
+                    input("\nPress Enter to return to standby...")
+                return success
+        elif behavior_mode == 'option_a':
+            # Always use Option A
+            if success:
+                self.logger.info("[Option A] Verification successful - returning to standby")
+            return success
+        else:  # option_b
+            # Always use Option B
+            if success:
+                print("\n" + "="*70)
+                print("✓ PICK VERIFICATION SUCCESSFUL")
+                print("="*70)
+                print(f"All ripe berries have been successfully picked!")
+                print(f"Verification found: {num_ripe} ripe berry/berries (max allowed: {max_ripe_allowed})")
+                print("="*70)
+                input("\nPress Enter to return to standby...")
+            return success
+    
+    # ==========================================================================
+    # LEGACY SEQUENCE METHODS
+    # ==========================================================================
+    
     def _execute_pnp_sequence(self) -> bool:
         """Execute the main PnP sequence based on configuration mode."""
         self.logger.info("Starting PnP sequence...")
+        
+        # Check if continuous operation mode is enabled
+        continuous_config = self.config.get('continuous_operation', {})
+        if continuous_config.get('enabled', False):
+            return self._execute_continuous_operation()
+        
+        # Otherwise, use legacy sequence mode
+        self.logger.warn("Running in LEGACY mode - continuous_operation.enabled = false")
+        return self._execute_legacy_mode()
+    
+    def _execute_legacy_mode(self) -> bool:
+        """Execute legacy sequence mode (for backward compatibility)."""
+        self.logger.info("Executing LEGACY sequence mode...")
         
         # Check execution mode
         sequence_config = self.config.get('sequence', {})
@@ -1587,6 +2182,7 @@ class RobotPnPCLI:
             
             # CRITICAL: For berry #2 onwards, ensure robot is at correct position
             # Must return to Home → Foto to ensure proper transformation
+            # In continuous_operation mode with multi_berry_recapture, also recapture
             if i > 1:
                 self.logger.info("=" * 60)
                 self.logger.info(f"PRE-BERRY #{i} POSITIONING (Safety Protocol)")
@@ -1603,6 +2199,33 @@ class RobotPnPCLI:
                 if not self._move_foto():
                     self.logger.error("Failed to reach Foto position - ABORTING for safety")
                     return False
+                
+                # Check if recapture is enabled in continuous operation mode
+                continuous_config = self.config.get('continuous_operation', {})
+                multi_berry_recapture_config = continuous_config.get('multi_berry_recapture', {})
+                
+                if continuous_config.get('enabled', False) and multi_berry_recapture_config.get('enabled', True):
+                    self.logger.info("Multi-berry recapture enabled - capturing updated berry data...")
+                    
+                    # Recapture to get updated berry positions
+                    if self._load_pnp_data():
+                        # Record capture
+                        if hasattr(self, 'statistics'):
+                            self.statistics.record_capture(is_verification=False)
+                        
+                        # Filter to only ripe berries
+                        ripe_berries = [f for f in self.selected_fruits if f.class_name == "ripe"]
+                        
+                        self.logger.info(f"Recapture found {len(ripe_berries)} ripe berry/berries")
+                        
+                        # Update fruits_to_process for remaining berries
+                        # Re-sort and continue from current index
+                        if ripe_berries:
+                            fruits_to_process = self._sort_fruits(ripe_berries, sort_by)
+                            # Note: We continue with the current loop index, but with updated data
+                            # The fruit object will be from the recapture
+                    else:
+                        self.logger.warn("Recapture failed - continuing with original data")
                 
                 self.logger.info("[OK] Robot positioned at Foto for berry transformation")
             
@@ -1664,6 +2287,11 @@ class RobotPnPCLI:
                                 return False
                         
                         break
+            
+            # Record final pick result in statistics (after all retries)
+            # Only record once per berry, not per attempt
+            if hasattr(self, 'statistics'):
+                self.statistics.record_pick(success=success)
             
             # Return home between picks if configured
             if return_home_between and success and i < len(fruits_to_process):

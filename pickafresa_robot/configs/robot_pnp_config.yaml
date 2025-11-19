@@ -28,6 +28,87 @@ run_mode: "autonomous"  # Options: "manual_confirm", "autonomous"
 # - "autonomous": Skips confirmations, prompts only for anomalies (production mode)
 
 # ==============================================================================
+# CONTINUOUS OPERATION MODE
+# ==============================================================================
+# New operating paradigm: System runs in continuous loop
+# Workflow: STARTUP -> FOTO -> STANDBY -> [capture trigger] -> PROCESS -> VERIFY -> STANDBY (repeat)
+# - Foto position becomes the default "idle" state instead of Home
+# - System only returns to Home on shutdown (Ctrl+C or manual quit from standby)
+# - After each berry placement, system verifies successful pick before returning to standby
+continuous_operation:
+  enabled: true  # Enable continuous operation mode (replaces legacy single-pass mode)
+  
+  # Standby behavior configuration
+  standby:
+    # Automatic capture interval (seconds) while at standby/Foto position
+    # System will automatically capture and check for new berries at this interval
+    interval_seconds: 5  # Default: 60s (1 minute)
+    
+    # Manual capture trigger key (for CLI mode)
+    # Press this key at standby to immediately trigger a capture
+    # Note: On macOS, keyboard library requires sudo and causes issues, so we use prompt-based input
+    manual_capture_key: "c"  # Key to press for immediate capture
+    
+    # Verification behavior after pick success
+    verification_behavior:
+      # "option_a": Autonomous - go to standby immediately (no user prompt)
+      # "option_b": Manual confirm - display success message and wait for user input
+      # Defaults based on run_mode:
+      #   - "autonomous" -> "option_a"
+      #   - "manual_confirm" -> "option_b"
+      mode: "auto"  # Options: "auto" (follows run_mode), "option_a", "option_b"
+    
+    # Standby menu options
+    menu:
+      show_statistics: true  # Display session statistics at standby
+      show_timer: true       # Display countdown to next auto-capture
+      allow_manual_capture: true  # Allow manual capture trigger
+      allow_shutdown: true   # Allow graceful shutdown from standby
+  
+  # Pick verification after each berry
+  verification:
+    enabled: true  # After place_final, return to Foto and verify no ripe berries remain
+    max_ripe_berries: 0  # Maximum allowed ripe berries for successful verification (0 = all picked)
+    retry_on_failure: true  # If verification finds more berries, continue picking
+    show_verification_results: true  # Log verification capture results
+  
+  # Multi-berry recapture behavior
+  multi_berry_recapture:
+    enabled: true  # Always recapture at Foto between berries in multi-berry mode
+    description: "In multi-berry mode, system returns to Foto between each berry to recapture and update detection data"
+
+# ==============================================================================
+# STATISTICS TRACKING
+# ==============================================================================
+# Session statistics for monitoring and performance analysis
+statistics:
+  enabled: true  # Enable statistics tracking
+  
+  # What to track
+  track:
+    total_berries_picked: true      # Total successful picks
+    successful_picks: true           # Picks that passed verification
+    failed_picks: true               # Picks that failed
+    total_captures: true             # Total capture requests
+    verification_captures: true     # Captures for verification only
+    standby_cycles: true            # Number of standby wait cycles
+    session_duration: true          # Total runtime
+    berries_per_cycle: true         # Berries picked per capture cycle
+  
+  # Display settings
+  display:
+    show_on_shutdown: true          # Display final statistics on shutdown
+    show_at_standby: true           # Display current stats at standby
+    show_after_verification: true   # Display stats after each verification
+    format: "detailed"              # Options: "summary", "detailed"
+  
+  # Persistence (for future use with service mode)
+  persistence:
+    enabled: false  # Save statistics to file
+    file_path: "pickafresa_robot/logs/session_stats.json"
+    save_interval_seconds: 300  # Auto-save every 5 minutes
+
+# ==============================================================================
 # ROBODK STATION CONFIGURATION
 # ==============================================================================
 robodk:
@@ -321,7 +402,12 @@ multi_berry:
   max_berries_per_run: 100            # Maximum number of berries to pick in one run (across all capture cycles)
   sort_by: "confidence"               # How to sort berries: "confidence", "distance", "position"
   confirm_between_picks: true         # Ask for confirmation between each berry (semi_auto mode)
-  return_home_between_picks: false    # Return to home target between berries
+  
+  # DEPRECATED: return_home_between_picks is now obsolete in continuous_operation mode
+  # System always stays at Foto between picks to avoid collisions and enable recapture
+  # This setting is kept for backward compatibility but has no effect when continuous_operation.enabled = true
+  return_home_between_picks: false    # DEPRECATED - Use continuous_operation.multi_berry_recapture instead
+  
   abort_on_failure: false             # Abort entire run if one berry fails
   retry_on_failure: true              # Retry failed berry picks
   max_retries: 5                      # Maximum retry attempts per berry
@@ -395,8 +481,21 @@ movement:
 vision_service:
   enabled: true                       # Enable vision service IPC communication
   host: "127.0.0.1"                   # Vision service host (usually localhost)
-  port: 5555                          # Vision service IPC port
+  port: 5557                          # Vision service IPC port
   timeout: 30.0                       # Request timeout in seconds
+  
+  # Connection resilience settings
+  reconnection:
+    enabled: true                     # Enable automatic reconnection on connection failures
+    max_retries: 3                    # Maximum number of reconnection attempts per request
+    retry_delay: 2.0                  # Delay between retry attempts (seconds)
+    detect_errors:                    # Error patterns that trigger reconnection
+      - "broken pipe"
+      - "connection"
+      - "closed"
+      - "reset"
+      - "errno 32"                    # SIGPIPE (broken pipe)
+      - "errno 104"                   # ECONNRESET (connection reset)
   
   # Multi-frame averaging settings (when requesting captures)
   multi_frame_enabled: true           # Request multi-frame averaged detections
@@ -442,11 +541,17 @@ pnp_data:
 # ==============================================================================
 # MOVEMENT SEQUENCE CONFIGURATION
 # ==============================================================================
+# SEQUENCE CONFIGURATION
+# ==============================================================================
+# NOTE: With continuous_operation.enabled = true, this sequence is DEPRECATED
+# The system now runs in a continuous loop managed by state machine
+# Legacy sequence mode is kept for backward compatibility only
 sequence:
   # Execution mode: "yaml" (use predefined), "interactive" (step-by-step prompts), "legacy" (hard-coded)
   execution_mode: "yaml"  # Options: "yaml", "interactive", "legacy"
   
-  # Main sequence (executed once per run)
+  # Main sequence (executed once per run in legacy mode)
+  # DEPRECATED in continuous_operation mode - use state machine instead
   # Note: Individual berry movements (prepick, pick, etc.) are handled inside process_fruits step
   # Set confirm: false to use run_mode default, or true/false to override
   steps:
@@ -474,12 +579,8 @@ sequence:
       confirm: false  # Keep false - no confirmation needed to start processing
       description: "Process all detected fruits (executes per-berry sequence for each)"
     
-    - name: "move_home_final"
-      type: "move"
-      target: "Home"
-      move_type: "joint"
-      # confirm: true  # Comment out to use run_mode default
-      description: "Return to home position"
+    # REMOVED: move_home_final - In continuous_operation mode, system stays at Foto
+    # System only returns to Home on explicit shutdown (Ctrl+C or quit from standby)
   
   # Per-berry sequence (executed for each fruit during process_fruits step)
   # These steps are executed by _process_single_fruit() for each detected berry
