@@ -58,7 +58,7 @@ from pickafresa_vision.vision_nodes.inference_filter import DetectionFilter
 
 # Local imports - Robot (for ROS2 logger)
 try:
-    from pickafresa_robot.robot_testing.ros2_logger import create_logger
+    from pickafresa_robot.robot_system.ros2_logger import create_logger
     HAVE_ROS2_LOGGER = True
 except ImportError:
     HAVE_ROS2_LOGGER = False
