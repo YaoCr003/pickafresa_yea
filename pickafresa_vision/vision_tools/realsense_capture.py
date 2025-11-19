@@ -194,7 +194,7 @@ class RealSenseCapture:
             "alignment": {"align_to_color": True},
             "profile_verification": {"use_cached_profiles": True, "max_startup_retries": 3},
             "initialization": {"cleanup_existing_contexts": True, "stabilization_frames": 5},
-            "capture": {"timeout_ms": 2000, "max_frame_retries": 10},
+            "capture": {"timeout_ms": 10000, "max_frame_retries": 10},
             "intrinsics": {"source": "auto", "validate_yaml_match": True},
             "error_handling": {"auto_recover": True, "max_consecutive_failures": 5},
             "macos_workarounds": {"enabled": True, "extra_init_delay_ms": 500},
@@ -361,7 +361,7 @@ class RealSenseCapture:
                 # Stabilization: discard first N frames
                 stabilization_frames = self.config.get("initialization", {}).get("stabilization_frames", 5)
                 for i in range(stabilization_frames):
-                    self.pipeline.wait_for_frames(timeout_ms=2000)
+                    self.pipeline.wait_for_frames(timeout_ms=10000)
                 self.logger.info(f"Discarded {stabilization_frames} stabilization frames")
                 
                 self.is_running = True

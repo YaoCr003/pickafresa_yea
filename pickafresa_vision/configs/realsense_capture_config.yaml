@@ -7,7 +7,7 @@
 camera:
   auto_detect: true           # Auto-detect first available RealSense device
   preferred_serial: null      # Specific device serial number (null = auto)
-  device_timeout_ms: 10000     # Timeout for device enumeration (milliseconds)
+  device_timeout_ms: 20000     # Timeout for device enumeration (milliseconds)
 
 # Stream configuration
 # Default resolutions and frame rates for color and depth streams
@@ -92,7 +92,7 @@ macos_workarounds:
   enabled: true               # Enable macOS-specific fixes
   kill_vdc_assistant: true   # Kill VDCAssistant process (requires sudo)
   force_usb_reset: true      # Force USB device reset (requires sudo)
-  extra_init_delay_ms: 1000    # Extra delay after initialization
+  extra_init_delay_ms: 5000    # Extra delay after initialization
 
 # Logging configuration
 logging:

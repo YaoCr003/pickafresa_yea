@@ -72,4 +72,4 @@ paho-mqtt==2.1.0
 keyboard==0.13.5
 
 # RealSense camera (Windows)
-pyrealsense2==2.54.2
+# pyrealsense2==2.54.2
