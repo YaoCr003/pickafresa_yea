@@ -54,6 +54,40 @@ depth_sampling:
   bbox_sample_grid: 10              # Grid size for bbox median sampling (10×10)
   roi_sample_grid: 20               # Grid size for ROI nearest depth sampling (20×20)
   
+  # Color-based depth filtering (HSV)
+  # Only samples depth from RED pixels (strawberry surface) to avoid false depth readings
+  # from green leaves or background objects
+  color_filter:
+    enabled: true                   # Enable color filtering (only red pixels)
+    color_space: "hsv"              # Color space for filtering (hsv recommended)
+    mode: "adaptive"                # "adaptive" or "preset"
+    
+    # Adaptive mode: Automatically detect red range from bbox content
+    # More robust to lighting variations, adapts to each berry
+    adaptive:
+      enabled: true                 # Enable adaptive red detection
+      percentile_low: 10            # Lower percentile for hue range (exclude outliers)
+      percentile_high: 90           # Upper percentile for hue range (exclude outliers)
+      saturation_min: 50            # Minimum saturation to consider (avoid pale/white)
+      value_min: 50                 # Minimum brightness to consider (avoid shadows)
+      expansion_factor: 1.2         # Expand detected range by this factor (1.0 = no expansion)
+      min_red_pixels: 20            # Minimum red pixels needed for adaptive mode
+    
+    # Preset mode: Fixed HSV ranges for red strawberries
+    # Fallback when adaptive fails or if adaptive is disabled
+    # Red in HSV wraps around 0/180, so we need two ranges
+    preset:
+      # Range 1: Deep red to red (high hue values)
+      hue_min_1: 0                  # Lower hue bound for red (0° = pure red)
+      hue_max_1: 10                 # Upper hue bound (10° = red-orange)
+      # Range 2: Pink-red to red (low hue values)
+      hue_min_2: 160                # Lower hue bound (160° = magenta-red)
+      hue_max_2: 179                # Upper hue bound (179° = wraps to red)
+      saturation_min: 40            # Minimum saturation (avoid desaturated reds)
+      saturation_max: 255           # Maximum saturation
+      value_min: 40                 # Minimum brightness (avoid very dark pixels)
+      value_max: 255                # Maximum brightness
+  
   # Depth output strategy (how to determine final depth value)
   # Options:
   #   "closest"         - Use minimum depth from ROI (current default, finds fruit surface)
@@ -66,8 +100,8 @@ depth_sampling:
   #       When enforce_depth_constraint=false, offsets affect the PnP initial guess and
   #       will proportionally scale X, Y, and Z according to pinhole projection.
   output_strategy: "closest_offset"        # Depth measurement strategy
-  closest_offset_multiplier: 0.6    # Multiplier for closest_offset (0.5 = half width)
-  center_offset_multiplier: 0.6     # Multiplier for center_offset (0.4 = 40% of width)
+  closest_offset_multiplier: 0.7    # Multiplier for closest_offset (0.5 = half width)
+  center_offset_multiplier: 0.7     # Multiplier for center_offset (0.4 = 40% of width)
 
 # PnP solver configuration
 pnp_solver:

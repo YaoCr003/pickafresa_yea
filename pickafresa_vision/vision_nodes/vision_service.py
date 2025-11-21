@@ -58,7 +58,7 @@ from pickafresa_vision.vision_nodes.inference_filter import DetectionFilter
 
 # Local imports - Robot (for ROS2 logger)
 try:
-    from pickafresa_robot.robot_testing.ros2_logger import create_logger
+    from pickafresa_robot.robot_system.ros2_logger import create_logger
     HAVE_ROS2_LOGGER = True
 except ImportError:
     HAVE_ROS2_LOGGER = False
@@ -83,7 +83,7 @@ LOG_DIR = REPO_ROOT / "pickafresa_vision" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "vision_service.log"
 
-# Use ROS2-style logger if available, otherwise fallback to basic logging
+# Use ROS2-style logger if available
 if HAVE_ROS2_LOGGER and create_logger is not None:
     logger = create_logger(
         node_name="vision_service",
@@ -95,15 +95,31 @@ if HAVE_ROS2_LOGGER and create_logger is not None:
         overwrite_log=True    # Overwrite on each start
     )
 else:
-    logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s] [%(levelname)s] [vision_service]: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.FileHandler(LOG_FILE, mode='w'),  # Overwrite on start
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
+    # Fallback: configure root logger once
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    
+    # Clear any existing handlers
+    root_logger.handlers.clear()
+    
+    # Add file handler
+    file_handler = logging.FileHandler(LOG_FILE, mode='w')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        '[%(asctime)s] [%(levelname)s] [vision_service]: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    root_logger.addHandler(file_handler)
+    
+    # Add console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter(
+        '[%(asctime)s] [%(levelname)s] [vision_service]: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    root_logger.addHandler(console_handler)
+    
     logger = logging.getLogger(__name__)
 
 
@@ -149,6 +165,7 @@ class VisionService:
         self.model: Optional[Any] = None
         self.pnp_estimator: Optional[FruitPoseEstimator] = None
         self.detection_filter: Optional[DetectionFilter] = None
+        self.model_path: Optional[Path] = None  # Track model path for HUD
         
         # IPC
         self.server_socket: Optional[socket.socket] = None
@@ -157,6 +174,13 @@ class VisionService:
         # Preview
         self.preview_enabled = self.config.get("preview", {}).get("enabled", False)
         self.preview_thread: Optional[threading.Thread] = None
+        
+        # Overlay state (runtime toggleable)
+        self.show_depth_overlay = False  # Toggle depth colormap overlay
+        self.show_hsv_overlay = False    # Toggle HSV filter mask overlay
+        self.depth_overlay_alpha = 0.4   # Depth overlay transparency (0.0-1.0)
+        self.hsv_overlay_alpha = 0.5     # HSV overlay transparency (0.0-1.0)
+        self.depth_colormap = cv2.COLORMAP_JET  # Current colormap
         
         # Performance tracking
         self.perf_stats = {
@@ -233,6 +257,7 @@ class VisionService:
                 if full_model_path and full_model_path.exists():
                     logger.info(f"Loading YOLO model from {full_model_path}...")
                     self.model = YOLO(str(full_model_path))
+                    self.model_path = full_model_path  # Store for HUD
                     logger.info("[OK] Model loaded")
                 else:
                     logger.warning(f"Model not found: {full_model_path}")
@@ -411,7 +436,8 @@ class VisionService:
                         # Execute capture
                         result = self.capture_and_process(
                             multi_frame=request.get("multi_frame", False),
-                            num_frames=request.get("num_frames", 1)
+                            num_frames=request.get("num_frames", 1),
+                            is_ipc_request=True  # Enable logging for IPC requests
                         )
                         
                         # Send response
@@ -479,7 +505,8 @@ class VisionService:
     def capture_and_process(
         self,
         multi_frame: bool = False,
-        num_frames: int = 1
+        num_frames: int = 1,
+        is_ipc_request: bool = False
     ) -> Dict[str, Any]:
         """
         Capture frame(s), run inference, and compute PnP.
@@ -487,6 +514,7 @@ class VisionService:
         Args:
             multi_frame: Use multi-frame averaging
             num_frames: Number of frames to capture (if multi_frame=True)
+            is_ipc_request: True if called from IPC request (enables logging)
         
         Returns:
             Dictionary with results
@@ -547,10 +575,11 @@ class VisionService:
             self.perf_stats["pnp_time"].append(pnp_time)
             self.perf_stats["total_time"].append(total_time)
             
-            # Log performance every N frames
-            log_every = self.config.get("logging", {}).get("performance", {}).get("log_every_n_frames", 30)
-            if self.frame_count % log_every == 0:
-                self._log_performance()
+            # Only log performance for IPC requests, not for preview loop
+            if is_ipc_request:
+                log_every = self.config.get("logging", {}).get("performance", {}).get("log_every_n_frames", 30)
+                if self.frame_count % log_every == 0:
+                    self._log_performance()
             
             return {
                 "success": True,
@@ -639,16 +668,9 @@ class VisionService:
             return detections
         
         try:
-            # Get camera intrinsics
-            intrinsics = self.camera.get_intrinsics()
-            
-            # Sanity check: Validate intrinsics are reasonable for RealSense D435
-            # fx/fy should typically be 400-2000 pixels for this camera model
-            if intrinsics.fx > 2000 or intrinsics.fy > 2000 or intrinsics.fx < 400 or intrinsics.fy < 400:
-                logger.warning(f"Intrinsics seem invalid (fx={intrinsics.fx:.1f}, fy={intrinsics.fy:.1f})")
-                logger.warning("Likely corrupted calibration file. Forcing RealSense SDK intrinsics...")
-                intrinsics = self.camera.get_intrinsics(source="realsense")
-                logger.info(f"Using SDK intrinsics: fx={intrinsics.fx:.1f}, fy={intrinsics.fy:.1f}")
+            # Get camera intrinsics from RealSense SDK directly
+            # This avoids validation warnings from potentially corrupted calibration files
+            intrinsics = self.camera.get_intrinsics(source="realsense")
             
             camera_matrix = intrinsics.to_matrix()
             dist_coeffs = intrinsics.distortion_coeffs
@@ -768,8 +790,11 @@ class VisionService:
                 # Run inference for preview
                 detections = self._run_inference(color_frame)
                 
-                # Draw detections
-                preview_frame = self._draw_preview(color_frame, depth_frame, detections)
+                # Compute PnP for detections (for depth display)
+                pnp_results = self._compute_pnp(color_frame, depth_frame, detections) if detections else []
+                
+                # Draw detections with PnP results
+                preview_frame = self._draw_preview(color_frame, depth_frame, pnp_results)
                 
                 # Show frame
                 cv2.imshow(window_name, preview_frame)
@@ -783,6 +808,44 @@ class VisionService:
                 elif key == ord('p'):
                     self.paused = not self.paused
                     logger.info(f"Preview: {'Paused' if self.paused else 'Resumed'}")
+                elif key == ord('d'):
+                    self.show_depth_overlay = not self.show_depth_overlay
+                    logger.info(f"Depth overlay: {'ON' if self.show_depth_overlay else 'OFF'}")
+                elif key == ord('h'):
+                    self.show_hsv_overlay = not self.show_hsv_overlay
+                    logger.info(f"HSV filter overlay: {'ON' if self.show_hsv_overlay else 'OFF'}")
+                elif key == ord('['):
+                    # Decrease depth overlay alpha
+                    self.depth_overlay_alpha = max(0.0, self.depth_overlay_alpha - 0.1)
+                    logger.info(f"Depth overlay alpha: {self.depth_overlay_alpha:.1f}")
+                elif key == ord(']'):
+                    # Increase depth overlay alpha
+                    self.depth_overlay_alpha = min(1.0, self.depth_overlay_alpha + 0.1)
+                    logger.info(f"Depth overlay alpha: {self.depth_overlay_alpha:.1f}")
+                elif key == ord(','):
+                    # Decrease HSV overlay alpha
+                    self.hsv_overlay_alpha = max(0.0, self.hsv_overlay_alpha - 0.1)
+                    logger.info(f"HSV overlay alpha: {self.hsv_overlay_alpha:.1f}")
+                elif key == ord('.'):
+                    # Increase HSV overlay alpha
+                    self.hsv_overlay_alpha = min(1.0, self.hsv_overlay_alpha + 0.1)
+                    logger.info(f"HSV overlay alpha: {self.hsv_overlay_alpha:.1f}")
+                elif key == ord('c'):
+                    # Cycle through colormaps
+                    colormaps = [
+                        (cv2.COLORMAP_JET, "JET"),
+                        (cv2.COLORMAP_HOT, "HOT"),
+                        (cv2.COLORMAP_RAINBOW, "RAINBOW"),
+                        (cv2.COLORMAP_OCEAN, "OCEAN"),
+                        (cv2.COLORMAP_VIRIDIS, "VIRIDIS"),
+                        (cv2.COLORMAP_TURBO, "TURBO")
+                    ]
+                    current_idx = next((i for i, (cm, _) in enumerate(colormaps) if cm == self.depth_colormap), 0)
+                    next_idx = (current_idx + 1) % len(colormaps)
+                    self.depth_colormap, colormap_name = colormaps[next_idx]
+                    logger.info(f"Depth colormap: {colormap_name}")
+                elif key == ord('?'):
+                    self._print_keyboard_help()
             
             except Exception as e:
                 logger.error(f"Preview error: {e}")
@@ -809,61 +872,309 @@ class VisionService:
         logger.info("Running preview loop on main thread...")
         self._preview_loop()
     
+    def _create_depth_overlay(self, depth_frame, target_shape: Tuple[int, int]) -> np.ndarray:
+        """
+        Create colorized depth overlay from depth frame.
+        
+        Args:
+            depth_frame: RealSense depth frame
+            target_shape: (height, width) of RGB frame for alignment
+        
+        Returns:
+            BGR colorized depth image matching target_shape
+        """
+        try:
+            # Get depth data as numpy array
+            depth_image = np.asanyarray(depth_frame.get_data())
+            
+            # Normalize depth to 0-255 range
+            depth_cfg = self.config.get("preview", {}).get("depth", {})
+            min_depth_m = depth_cfg.get("min_depth_m", 0.1)
+            max_depth_m = depth_cfg.get("max_depth_m", 3.0)
+            
+            # Convert to meters and clip
+            depth_m = depth_image.astype(np.float32) * depth_frame.get_units()
+            depth_m = np.clip(depth_m, min_depth_m, max_depth_m)
+            
+            # Normalize to 0-255
+            depth_normalized = ((depth_m - min_depth_m) / (max_depth_m - min_depth_m) * 255).astype(np.uint8)
+            
+            # Apply colormap
+            depth_colorized = cv2.applyColorMap(depth_normalized, self.depth_colormap)
+            
+            # Resize to match RGB frame if needed
+            if depth_colorized.shape[:2] != target_shape:
+                depth_colorized = cv2.resize(depth_colorized, (target_shape[1], target_shape[0]))
+            
+            return depth_colorized
+        
+        except Exception as e:
+            logger.error(f"Error creating depth overlay: {e}")
+            # Return black image on error
+            return np.zeros((target_shape[0], target_shape[1], 3), dtype=np.uint8)
+    
+    def _create_hsv_overlay(self, color_image: np.ndarray, pnp_results: List[Dict[str, Any]]) -> np.ndarray:
+        """
+        Create HSV filter visualization overlay showing red strawberry surface detection.
+        
+        Args:
+            color_image: RGB image
+            pnp_results: List of PnP results with bounding boxes
+        
+        Returns:
+            BGR image with HSV filter masks visualized (green = kept red pixels)
+        """
+        try:
+            # Create blank overlay
+            h, w = color_image.shape[:2]
+            overlay = np.zeros((h, w, 3), dtype=np.uint8)
+            
+            # Get PnP config for HSV parameters
+            pnp_config_path = self.config.get("pnp", {}).get("config_path", "")
+            full_pnp_config_path = REPO_ROOT / pnp_config_path if pnp_config_path else None
+            
+            if not full_pnp_config_path or not full_pnp_config_path.exists():
+                return overlay
+            
+            # Load HSV parameters from PnP config
+            with open(full_pnp_config_path, 'r') as f:
+                pnp_config = yaml.safe_load(f)
+            
+            color_cfg = pnp_config.get("depth_sampling", {}).get("color_filter", {})
+            if not color_cfg.get("enabled", False):
+                # Draw text indicating filter is disabled
+                cv2.putText(overlay, "HSV Filter: DISABLED", (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                return overlay
+            
+            mode = color_cfg.get("mode", "adaptive")
+            
+            # Get HSV parameters based on mode
+            if mode == "preset":
+                preset_cfg = color_cfg.get("preset", {})
+                sat_min = preset_cfg.get("saturation_min", 50)
+                val_min = preset_cfg.get("value_min", 50)
+                hue_min_1 = preset_cfg.get("hue_min_1", 0)
+                hue_max_1 = preset_cfg.get("hue_max_1", 10)
+                hue_min_2 = preset_cfg.get("hue_min_2", 160)
+                hue_max_2 = preset_cfg.get("hue_max_2", 179)
+            else:  # adaptive
+                adaptive_cfg = color_cfg.get("adaptive", {})
+                sat_min = adaptive_cfg.get("saturation_min", 50)
+                val_min = adaptive_cfg.get("value_min", 50)
+                # Use preset defaults for visualization
+                hue_min_1 = 0
+                hue_max_1 = 10
+                hue_min_2 = 160
+                hue_max_2 = 179
+            
+            # Draw filter visualization for each detection's bbox
+            for result in pnp_results:
+                cx, cy, ww, hh = result["bbox_cxcywh"]
+                x1 = int(max(0, cx - ww/2))
+                y1 = int(max(0, cy - hh/2))
+                x2 = int(min(w, cx + ww/2))
+                y2 = int(min(h, cy + hh/2))
+                
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                
+                # Extract ROI
+                roi = color_image[y1:y2, x1:x2]
+                
+                # Convert to HSV
+                hsv_roi = cv2.cvtColor(roi, cv2.COLOR_RGB2HSV)
+                
+                # Create red mask (two ranges due to HSV wrap-around)
+                lower1 = np.array([hue_min_1, sat_min, val_min], dtype=np.uint8)
+                upper1 = np.array([hue_max_1, 255, 255], dtype=np.uint8)
+                lower2 = np.array([hue_min_2, sat_min, val_min], dtype=np.uint8)
+                upper2 = np.array([hue_max_2, 255, 255], dtype=np.uint8)
+                
+                mask1 = cv2.inRange(hsv_roi, lower1, upper1)
+                mask2 = cv2.inRange(hsv_roi, lower2, upper2)
+                red_mask = cv2.bitwise_or(mask1, mask2)
+                
+                # Colorize mask (green for kept red pixels)
+                mask_colorized = np.zeros_like(roi)
+                mask_colorized[red_mask > 0] = [0, 255, 0]  # Green in RGB (will convert to BGR)
+                
+                # Place in overlay
+                overlay[y1:y2, x1:x2] = cv2.cvtColor(mask_colorized, cv2.COLOR_RGB2BGR)
+            
+            return overlay
+        
+        except Exception as e:
+            logger.error(f"Error creating HSV overlay: {e}")
+            # Return black image on error
+            h, w = color_image.shape[:2] if len(color_image.shape) >= 2 else (480, 640)
+            return np.zeros((h, w, 3), dtype=np.uint8)
+    
+    def _print_keyboard_help(self):
+        """Print keyboard shortcuts to console."""
+        print()
+        print("=" * 70)
+        print("KEYBOARD SHORTCUTS")
+        print("=" * 70)
+        print("  q     - Quit service")
+        print("  p     - Pause/Resume preview")
+        print("  d     - Toggle depth overlay")
+        print("  h     - Toggle HSV filter overlay")
+        print("  [     - Decrease depth overlay alpha")
+        print("  ]     - Increase depth overlay alpha")
+        print("  ,     - Decrease HSV overlay alpha")
+        print("  .     - Increase HSV overlay alpha")
+        print("  c     - Cycle depth colormap")
+        print("  ?     - Show this help")
+        print("=" * 70)
+        print()
+    
     def _draw_preview(
         self,
         color_frame,
         depth_frame,
-        detections: List[Dict[str, Any]]
+        pnp_results: List[Dict[str, Any]]
     ):
-        """Draw preview frame with overlays."""
+        """
+        Draw preview frame with comprehensive overlays.
+        
+        Shows:
+        - Bounding boxes with class, confidence, and depth (raw + final)
+        - Frame statistics HUD (FPS, frames captured, model name, detection count)
+        - Optional depth colormap overlay (toggle with 'd')
+        - Optional HSV filter mask overlay (toggle with 'h')
+        """
         # Clone frame for drawing
         preview = color_frame.copy()
         
         # Convert RGB to BGR for OpenCV display
         # RealSense returns RGB, but cv2.imshow expects BGR
         preview = cv2.cvtColor(preview, cv2.COLOR_RGB2BGR)
+        h, w = preview.shape[:2]
         
-        # Draw detections
-        for det in detections:
-            cx, cy, w, h = det["bbox_cxcywh"]
-            x1 = int(cx - w/2)
-            y1 = int(cy - h/2)
-            x2 = int(cx + w/2)
-            y2 = int(cy + h/2)
+        # Apply depth overlay if enabled
+        if self.show_depth_overlay and depth_frame is not None:
+            depth_colorized = self._create_depth_overlay(depth_frame, (h, w))
+            preview = cv2.addWeighted(preview, 1.0 - self.depth_overlay_alpha, 
+                                     depth_colorized, self.depth_overlay_alpha, 0)
+        
+        # Apply HSV filter overlay if enabled
+        if self.show_hsv_overlay and pnp_results:
+            hsv_overlay = self._create_hsv_overlay(color_frame, pnp_results)
+            preview = cv2.addWeighted(preview, 1.0 - self.hsv_overlay_alpha,
+                                     hsv_overlay, self.hsv_overlay_alpha, 0)
+        
+        # Draw detections with PnP results
+        for result in pnp_results:
+            cx, cy, ww, hh = result["bbox_cxcywh"]
+            x1 = int(cx - ww/2)
+            y1 = int(cy - hh/2)
+            x2 = int(cx + ww/2)
+            y2 = int(cy + hh/2)
             
             # Draw bbox (BGR format: Green = (0, 255, 0))
             color = (0, 255, 0)  # Green in BGR
             cv2.rectangle(preview, (x1, y1), (x2, y2), color, 2)
             
-            # Draw label with background for better visibility
-            label = f"{det['class_name']} {det['confidence']:.2f}"
-            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+            # Build label with class, confidence, and depth
+            label = f"{result['class_name']} {result['confidence']:.2f}"
             
-            # Draw label background (semi-transparent black)
-            cv2.rectangle(preview, (x1, y1-label_size[1]-10), (x1+label_size[0], y1), (0, 0, 0), -1)
+            # Add depth information if PnP succeeded
+            if result.get("success") and result.get("median_depth") is not None:
+                raw_depth_mm = result["median_depth"] * 1000  # Convert m to mm
+                
+                # Check if offset was applied (from position_cam Z vs median_depth)
+                if result.get("position_cam") is not None:
+                    final_depth_mm = result["position_cam"][2] * 1000  # Z coordinate in mm
+                    
+                    # Show both raw and final if different (offset applied)
+                    if abs(final_depth_mm - raw_depth_mm) > 1.0:  # > 1mm difference
+                        label += f" | {raw_depth_mm:.0f}mm -> {final_depth_mm:.0f}mm"
+                    else:
+                        label += f" | {raw_depth_mm:.0f}mm"
+                else:
+                    label += f" | {raw_depth_mm:.0f}mm"
+            elif result.get("median_depth") is not None:
+                # PnP failed but we have depth measurement
+                raw_depth_mm = result["median_depth"] * 1000
+                label += f" | {raw_depth_mm:.0f}mm"
+            
+            # Draw label with background for better visibility
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+            
+            # Draw label background (black)
+            label_y = max(y1 - 5, label_size[1] + 5)  # Ensure label is visible
+            cv2.rectangle(preview, (x1, label_y - label_size[1] - 5), 
+                         (x1 + label_size[0] + 4, label_y + 2), (0, 0, 0), -1)
+            
             # Draw label text (white)
-            cv2.putText(preview, label, (x1, y1-5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.putText(preview, label, (x1 + 2, label_y - 2),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
         
-        # Draw info panel background (top-left corner)
-        info_bg_height = 90
-        cv2.rectangle(preview, (0, 0), (250, info_bg_height), (0, 0, 0), -1)
-        
-        # Draw FPS counter
-        if self.perf_stats["total_time"]:
-            fps = 1.0 / np.mean(self.perf_stats["total_time"][-30:]) if len(self.perf_stats["total_time"]) >= 30 else 0
-            cv2.putText(preview, f"FPS: {fps:.1f}", (10, 25),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        
-        # Draw frame count
-        cv2.putText(preview, f"Frame: {self.frame_count}", (10, 50),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        
-        # Draw detection count
-        cv2.putText(preview, f"Detections: {len(detections)}", (10, 75),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        # Draw comprehensive HUD (top-left corner)
+        self._draw_hud(preview, pnp_results)
         
         return preview
+    
+    def _draw_hud(self, frame: np.ndarray, pnp_results: List[Dict[str, Any]]) -> None:
+        """
+        Draw comprehensive heads-up display with frame statistics.
+        
+        Args:
+            frame: BGR frame to draw on (modified in-place)
+            pnp_results: List of PnP results for detection count
+        """
+        h, w = frame.shape[:2]
+        
+        # Calculate FPS
+        fps = 0.0
+        if self.perf_stats["total_time"] and len(self.perf_stats["total_time"]) >= 5:
+            # Use last 30 frames for stable FPS calculation
+            recent_times = self.perf_stats["total_time"][-30:]
+            fps = 1.0 / np.mean(recent_times) if np.mean(recent_times) > 0 else 0.0
+        
+        # Prepare HUD text lines
+        model_name = self.model_path.name if self.model_path else "No Model"
+        
+        hud_lines = [
+            f"Model: {model_name}",
+            f"FPS: {fps:.1f}",
+            f"Frames: {self.frame_count}",
+            f"Detections: {len(pnp_results)}",
+        ]
+        
+        # Add overlay status if enabled
+        if self.show_depth_overlay:
+            hud_lines.append(f"Depth Overlay: {self.depth_overlay_alpha:.1f}")
+        if self.show_hsv_overlay:
+            hud_lines.append(f"HSV Overlay: {self.hsv_overlay_alpha:.1f}")
+        
+        # Calculate HUD background size
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.5
+        thickness = 1
+        line_height = 20
+        padding = 8
+        
+        max_text_width = 0
+        for line in hud_lines:
+            text_size = cv2.getTextSize(line, font, font_scale, thickness)[0]
+            max_text_width = max(max_text_width, text_size[0])
+        
+        hud_width = max_text_width + padding * 2
+        hud_height = len(hud_lines) * line_height + padding * 2
+        
+        # Draw semi-transparent background
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (5, 5), (5 + hud_width, 5 + hud_height), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+        
+        # Draw HUD text
+        y_offset = 5 + padding + 15
+        for line in hud_lines:
+            cv2.putText(frame, line, (5 + padding, y_offset),
+                       font, font_scale, (0, 255, 0), thickness, cv2.LINE_AA)
+            y_offset += line_height
 
 
 def main():

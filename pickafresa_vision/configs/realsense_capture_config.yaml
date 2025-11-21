@@ -92,7 +92,7 @@ macos_workarounds:
   enabled: true               # Enable macOS-specific fixes
   kill_vdc_assistant: true   # Kill VDCAssistant process (requires sudo)
   force_usb_reset: true      # Force USB device reset (requires sudo)
-  extra_init_delay_ms: 1000    # Extra delay after initialization
+  extra_init_delay_ms: 3000    # Extra delay after initialization
 
 # Logging configuration
 logging:

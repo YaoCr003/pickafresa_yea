@@ -194,7 +194,7 @@ class RealSenseCapture:
             "alignment": {"align_to_color": True},
             "profile_verification": {"use_cached_profiles": True, "max_startup_retries": 3},
             "initialization": {"cleanup_existing_contexts": True, "stabilization_frames": 5},
-            "capture": {"timeout_ms": 2000, "max_frame_retries": 10},
+            "capture": {"timeout_ms": 10000, "max_frame_retries": 10},
             "intrinsics": {"source": "auto", "validate_yaml_match": True},
             "error_handling": {"auto_recover": True, "max_consecutive_failures": 5},
             "macos_workarounds": {"enabled": True, "extra_init_delay_ms": 500},
