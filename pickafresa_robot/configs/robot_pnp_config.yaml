@@ -160,13 +160,13 @@ transforms:
   # For overhead picking: positive Z goes UP (away from fruit), negative Z goes DOWN (into fruit)
   pick_offset:
     # Pre-pick position offset (approach position before actual pick)
-    prepick_offset_mm: [0.0, 100.0, 0.0]  # [x, y, z] offset from fruit center
+    prepick_offset_mm: [0.0, 100.0, 00.0]  # [x, y, z] offset from fruit center
                                            # Default: 100mm above fruit (positive Z)
     prepick_rotation_deg: [0.0, 0.0, -90.0] # [u, v, w] absolute rotation for prepick pose
     
     # Pick position offset (actual grasp point)
-    pick_offset_mm: [0.0, 0.0, -20.0]       # [x, y, z] offset from fruit center
-    pick_rotation_deg: [0.0, 0.0, -80.0]    # [u, v, w] absolute rotation for pick pose
+    pick_offset_mm: [0.0, 0.0, 00.0]       # [x, y, z] offset from fruit center
+    pick_rotation_deg: [0.0, 0.0, -90.0]    # [u, v, w] absolute rotation for pick pose
     
     # Place position offset (where to drop/place fruit)
     place_offset_mm: [0.0, 0.0, 50.0]     # Offset for place position from pick
@@ -345,12 +345,12 @@ multi_stage_capture:
     #   - Positive value = camera positioned back from berry
     #   - Example: [0, 0, 250] = camera 250mm back from berry surface
     #   - Only Z component used; X,Y forced to zero (no lateral offset)
-    stage2_offset_mm: [0.0, 0.0, 220]  # [x, y, z] - only z used for standoff distance
+    stage2_offset_mm: [0.0, 0.0, 200]  # [x, y, z] - only z used for standoff distance
     stage2_rotation_deg: [0.0, 0.0, 0.0]  # [u, v, w] additional rotation offset (applied to camera frame)
   
   stage3_prepick:
     enabled: false                    # Enable 3rd capture (prepick refinement)
-    min_depth_mm: 250.0               # Minimum depth for using depth data (RealSense limitation)
+    min_depth_mm: 220.0               # Minimum depth for using depth data (RealSense limitation)
     refine_axes: ["x", "z"]           # Which axes to refine in base frame (x, z from below)
     use_geometric_only: true          # Use PnP without depth constraint for refinement
     
@@ -461,12 +461,12 @@ movement:
       acceleration: 60
     
     custom:
-      linear_speed: 75    # User can override these
-      joint_speed: 45
+      linear_speed: 80    # User can override these
+      joint_speed: 50
       acceleration: 50
   
   # Default profile to use
-  default_profile: "slow"  # Options: "turtle", "slow", "normal", "custom"
+  default_profile: "custom"  # Options: "turtle", "slow", "normal", "custom"
   
   # Movement type preferences
   move_type:
