@@ -49,6 +49,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
+
 import cv2
 import numpy as np
 
@@ -361,7 +362,7 @@ class RealSenseCapture:
                 # Stabilization: discard first N frames
                 stabilization_frames = self.config.get("initialization", {}).get("stabilization_frames", 5)
                 for i in range(stabilization_frames):
-                    self.pipeline.wait_for_frames(timeout_ms=2000)
+                    self.pipeline.wait_for_frames(timeout_ms=10000)
                 self.logger.info(f"Discarded {stabilization_frames} stabilization frames")
                 
                 self.is_running = True
