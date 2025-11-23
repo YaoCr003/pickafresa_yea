@@ -18,6 +18,8 @@ Design notes:
 - The API reads defaults from a YAML in pickafresa_vision/configs/, and the
     interactive tool persists user choices to both the JSON config store and the
     YAML so API consumers have stable defaults.
+    
+@aldrick-t, 2025
 """
 
 from __future__ import annotations

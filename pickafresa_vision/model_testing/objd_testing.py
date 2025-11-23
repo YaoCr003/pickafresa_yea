@@ -24,7 +24,7 @@ Keyboard Controls:
     - - Decrease confidence threshold by 0.05
     r - Reset to default settings
 
-Team YEA, 2025
+@aldrick-t, 2025
 """
 
 from __future__ import annotations

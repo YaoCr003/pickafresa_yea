@@ -1,5 +1,7 @@
 """
 CLI tool for camera capture using the camera_capture API.
+
+@aldrick-t, 2025
 """
 
 import sys

@@ -2,7 +2,7 @@
 Interactive RealSense D400 Series Depth Calibration Tool
 Script to collect depth measurements, fit a linear model, and visualize results.
 
-Team YEA, 2025
+@aldrick-t, 2025
 '''
 
 import pyrealsense2 as rs

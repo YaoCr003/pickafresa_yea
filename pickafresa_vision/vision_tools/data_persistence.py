@@ -28,7 +28,7 @@ Usage:
     
     print(f"Saved to captures/{timestamp}_*")
 
-Team YEA, 2025
+@aldrick-t, 2025
 """
 
 from __future__ import annotations
