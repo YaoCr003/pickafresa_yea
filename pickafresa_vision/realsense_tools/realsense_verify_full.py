@@ -9,7 +9,7 @@ Supports three testing modes:
 
 Provides both CLI tool and API for programmatic use.
 
-Team YEA, 2025
+@aldrick-t, 2025
 '''
 
 from __future__ import annotations
