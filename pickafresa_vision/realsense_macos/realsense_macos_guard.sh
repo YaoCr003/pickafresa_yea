@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# RealSense guard script for macOS
+# Periodically kills macOS camera processes if a RealSense D435 is connected
+# @aldrick-t, 2025
 
 # MacOS only guard
 set -euo pipefail

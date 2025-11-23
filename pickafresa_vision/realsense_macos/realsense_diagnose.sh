@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # RealSense diagnostic script for macOS
 # Checks for common issues and provides troubleshooting information
+# @aldrick-t, 2025
 
 set -euo pipefail
 

@@ -2,6 +2,7 @@
 # realsense_macos_guardinstall — Auto-installer for a background guard that
 # auto-kills macOS camera agents when an Intel RealSense device (e.g., D435)
 # is attached. Target: Apple Silicon (arm64) running macOS 26 "Tahoe".
+# @aldrick-t, 2025
 
 set -euo pipefail
 
