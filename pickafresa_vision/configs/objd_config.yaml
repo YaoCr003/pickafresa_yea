@@ -8,7 +8,7 @@ dataset_path: pickafresa_vision/datasets/yea_strawberry_class_2dbbox_aggr.v2-18k
 
 # Inference parameters
 inference:
-  confidence: 0.60          # Confidence threshold for detections [0.0-1.0]
+  confidence: 0.55          # Confidence threshold for detections [0.0-1.0]
   iou: 0.45                 # IoU threshold for NMS
   max_detections: 5       # Maximum number of detections per image
 

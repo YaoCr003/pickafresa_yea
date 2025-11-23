@@ -84,13 +84,14 @@ LOG_DIR = REPO_ROOT / "pickafresa_vision" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "pnp_calc.log"
 
+# Log to file only, not console (to avoid spam during preview)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='[%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE, mode='a'),
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.FileHandler(LOG_FILE, mode='a')
+    ],
+    force=True
 )
 logger = logging.getLogger(__name__)
 
@@ -455,16 +456,18 @@ class FruitPoseEstimator:
     
     def _sample_bbox_median_depth(
         self,
+        color_image: np.ndarray,
         depth_frame: Any,
         bbox_cxcywh: Tuple[float, float, float, float],
         grid_size: int = 10
     ) -> Optional[float]:
         """
-        Sample depth across entire bbox using grid sampling.
+        Sample depth across entire bbox using grid sampling with optional color filtering.
         
         This is a fallback strategy when corner sampling fails.
         
         Args:
+            color_image: RGB image for color filtering
             depth_frame: RealSense depth frame
             bbox_cxcywh: (center_x, center_y, width, height)
             grid_size: Number of sample points per dimension
@@ -490,6 +493,9 @@ class FruitPoseEstimator:
         if x2 <= x1 or y2 <= y1:
             return None
         
+        # Create color mask if enabled
+        color_mask = self._create_color_mask(color_image, (x1, y1, x2, y2))
+        
         # Sample on a grid
         values: List[float] = []
         step_x = max(1, (x2 - x1) // grid_size)
@@ -497,6 +503,13 @@ class FruitPoseEstimator:
         
         for yy in range(y1, y2 + 1, step_y):
             for xx in range(x1, x2 + 1, step_x):
+                # Check color mask if enabled
+                if color_mask is not None:
+                    mask_y = min(yy - y1, color_mask.shape[0] - 1)
+                    mask_x = min(xx - x1, color_mask.shape[1] - 1)
+                    if color_mask[mask_y, mask_x] == 0:  # Skip non-red pixels (keep only red)
+                        continue
+                
                 depth = depth_frame.get_distance(int(xx), int(yy))
                 if depth > 0:
                     values.append(depth)
@@ -506,21 +519,152 @@ class FruitPoseEstimator:
         
         return float(np.median(values))
     
+    def _create_color_mask(self, color_image: np.ndarray, roi: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
+        """
+        Create HSV-based color mask to keep only red pixels (strawberry surface).
+        
+        Two modes:
+        - adaptive: Automatically finds red hue range from bbox pixels using percentiles
+        - preset: Uses fixed red hue ranges (0-10 and 160-179)
+        
+        Args:
+            color_image: RGB image
+            roi: Region of interest as (x1, y1, x2, y2)
+        
+        Returns:
+            Binary mask where 255 = red (keep), 0 = not red (filter)
+            Returns None if color filtering is disabled
+        """
+        color_cfg = self.config.get("depth_sampling", {}).get("color_filter", {})
+        if not color_cfg.get("enabled", False):
+            return None
+        
+        x1, y1, x2, y2 = roi
+        
+        # Extract ROI from image
+        h, w = color_image.shape[:2]
+        x1 = max(0, min(w - 1, x1))
+        x2 = max(0, min(w - 1, x2))
+        y1 = max(0, min(h - 1, y1))
+        y2 = max(0, min(h - 1, y2))
+        
+        if x2 <= x1 or y2 <= y1:
+            return None
+        
+        roi_image = color_image[y1:y2, x1:x2]
+        
+        # Convert RGB to HSV
+        hsv_roi = cv2.cvtColor(roi_image, cv2.COLOR_RGB2HSV)
+        
+        mode = color_cfg.get("mode", "adaptive")
+        
+        if mode == "adaptive":
+            # Extract saturation and value thresholds
+            adaptive_cfg = color_cfg.get("adaptive", {})
+            sat_min = adaptive_cfg.get("saturation_min", 50)
+            val_min = adaptive_cfg.get("value_min", 50)
+            
+            # Create initial mask for saturated, bright pixels (potential red candidates)
+            sat_val_mask = (hsv_roi[:, :, 1] >= sat_min) & (hsv_roi[:, :, 2] >= val_min)
+            
+            if not sat_val_mask.any():
+                # No candidates - fall back to preset mode
+                mode = "preset"
+            else:
+                # Extract hue values from candidate pixels
+                hue_values = hsv_roi[:, :, 0][sat_val_mask]
+                
+                # Red hues wrap around 0/180 - normalize to 0-180 range
+                # Values near 0 (0-10) and near 180 (160-179) are both red
+                # Map 160-179 -> -20 to -1 for unified range
+                hue_normalized = hue_values.astype(np.float32)
+                hue_normalized[hue_values > 90] -= 180  # Shift upper red range to negative
+                
+                # Calculate percentile-based range
+                percentile_low = adaptive_cfg.get("percentile_low", 10)
+                percentile_high = adaptive_cfg.get("percentile_high", 90)
+                expansion_factor = adaptive_cfg.get("expansion_factor", 1.2)
+                min_red_pixels = adaptive_cfg.get("min_red_pixels", 20)
+                
+                if len(hue_normalized) < min_red_pixels:
+                    # Not enough red pixels - fall back to preset
+                    mode = "preset"
+                else:
+                    hue_low = np.percentile(hue_normalized, percentile_low)
+                    hue_high = np.percentile(hue_normalized, percentile_high)
+                    
+                    # Expand range
+                    hue_range = hue_high - hue_low
+                    hue_low -= hue_range * (expansion_factor - 1.0) / 2.0
+                    hue_high += hue_range * (expansion_factor - 1.0) / 2.0
+                    
+                    # Clamp to valid red range (-20 to 10)
+                    hue_low = max(-20, hue_low)
+                    hue_high = min(10, hue_high)
+                    
+                    # Create mask using adaptive range
+                    # Split into two ranges if wrapping
+                    if hue_low < 0:
+                        # Range wraps: use [hue_low+180, 179] and [0, hue_high]
+                        lower1 = np.array([int(hue_low + 180), sat_min, val_min], dtype=np.uint8)
+                        upper1 = np.array([179, 255, 255], dtype=np.uint8)
+                        lower2 = np.array([0, sat_min, val_min], dtype=np.uint8)
+                        upper2 = np.array([int(hue_high), 255, 255], dtype=np.uint8)
+                        
+                        mask1 = cv2.inRange(hsv_roi, lower1, upper1)
+                        mask2 = cv2.inRange(hsv_roi, lower2, upper2)
+                        red_mask = cv2.bitwise_or(mask1, mask2)
+                    else:
+                        # Simple range [hue_low, hue_high]
+                        lower = np.array([int(hue_low), sat_min, val_min], dtype=np.uint8)
+                        upper = np.array([int(hue_high), 255, 255], dtype=np.uint8)
+                        red_mask = cv2.inRange(hsv_roi, lower, upper)
+                    
+                    return red_mask
+        
+        # Preset mode (fallback or explicit)
+        if mode == "preset":
+            preset_cfg = color_cfg.get("preset", {})
+            sat_min = preset_cfg.get("saturation_min", 50)
+            val_min = preset_cfg.get("value_min", 50)
+            
+            # Red wraps around: [0-10] and [160-179]
+            hue_min_1 = preset_cfg.get("hue_min_1", 0)
+            hue_max_1 = preset_cfg.get("hue_max_1", 10)
+            hue_min_2 = preset_cfg.get("hue_min_2", 160)
+            hue_max_2 = preset_cfg.get("hue_max_2", 179)
+            
+            lower1 = np.array([hue_min_1, sat_min, val_min], dtype=np.uint8)
+            upper1 = np.array([hue_max_1, 255, 255], dtype=np.uint8)
+            lower2 = np.array([hue_min_2, sat_min, val_min], dtype=np.uint8)
+            upper2 = np.array([hue_max_2, 255, 255], dtype=np.uint8)
+            
+            mask1 = cv2.inRange(hsv_roi, lower1, upper1)
+            mask2 = cv2.inRange(hsv_roi, lower2, upper2)
+            red_mask = cv2.bitwise_or(mask1, mask2)
+            
+            return red_mask
+        
+        return None
+    
     def _sample_roi_nearest_depth(
         self,
+        color_image: np.ndarray,
         depth_frame: Any,
         bbox_cxcywh: Tuple[float, float, float, float],
         grid_size: int = 20
     ) -> Optional[float]:
         """
-        Sample nearest (minimum) depth within bbox ROI.
+        Sample nearest (minimum) depth within bbox ROI with optional color filtering.
         
         This is the most robust strategy for fruit detection:
         - Samples across full bbox area
         - Uses minimum depth to find fruit surface (ignoring background)
         - Dense grid sampling for reliability
+        - Optional HSV filtering to keep only red pixels (strawberry surface)
         
         Args:
+            color_image: RGB image for color filtering
             depth_frame: RealSense depth frame
             bbox_cxcywh: (center_x, center_y, width, height)
             grid_size: Number of sample points per dimension (higher = more robust)
@@ -546,6 +690,9 @@ class FruitPoseEstimator:
         if x2 <= x1 or y2 <= y1:
             return None
         
+        # Create color mask if enabled
+        color_mask = self._create_color_mask(color_image, (x1, y1, x2, y2))
+        
         # Sample on a dense grid
         values: List[float] = []
         step_x = max(1, (x2 - x1) // grid_size)
@@ -553,6 +700,13 @@ class FruitPoseEstimator:
         
         for yy in range(y1, y2 + 1, step_y):
             for xx in range(x1, x2 + 1, step_x):
+                # Check color mask if enabled
+                if color_mask is not None:
+                    mask_y = min(yy - y1, color_mask.shape[0] - 1)
+                    mask_x = min(xx - x1, color_mask.shape[1] - 1)
+                    if color_mask[mask_y, mask_x] == 0:  # Skip non-red pixels (keep only red)
+                        continue
+                
                 depth = depth_frame.get_distance(int(xx), int(yy))
                 if depth > 0:
                     values.append(depth)
@@ -600,6 +754,7 @@ class FruitPoseEstimator:
     
     def _sample_corner_depths(
         self,
+        color_image: np.ndarray,
         depth_frame: Any,
         bbox_cxcywh: Tuple[float, float, float, float],
         corners_2d: np.ndarray
@@ -622,6 +777,7 @@ class FruitPoseEstimator:
         AFTER PnP solving to only affect Z. Otherwise, offset affects initial guess.
         
         Args:
+            color_image: RGB image for color filtering
             depth_frame: RealSense depth frame
             bbox_cxcywh: Bounding box in (cx, cy, w, h) format
             corners_2d: (4, 2) array of corner positions (kept for inset calculation)
@@ -657,7 +813,7 @@ class FruitPoseEstimator:
         if output_strategy == "closest" or output_strategy == "closest_offset":
             # Sample minimum depth from ROI
             roi_grid_size = ds_cfg.get("roi_sample_grid", 20)
-            raw_depth = self._sample_roi_nearest_depth(depth_frame, bbox_cxcywh, roi_grid_size)
+            raw_depth = self._sample_roi_nearest_depth(color_image, depth_frame, bbox_cxcywh, roi_grid_size)
             strategy_name = output_strategy
             
             if raw_depth is not None and min_depth <= raw_depth <= max_depth:
@@ -716,7 +872,7 @@ class FruitPoseEstimator:
             logger.warning(f"Unknown output_strategy '{output_strategy}', falling back to closest")
             # Fallback to closest strategy
             roi_grid_size = ds_cfg.get("roi_sample_grid", 20)
-            raw_depth = self._sample_roi_nearest_depth(depth_frame, bbox_cxcywh, roi_grid_size)
+            raw_depth = self._sample_roi_nearest_depth(color_image, depth_frame, bbox_cxcywh, roi_grid_size)
             
             if raw_depth is not None and min_depth <= raw_depth <= max_depth:
                 depths = [raw_depth] * 4
@@ -748,7 +904,7 @@ class FruitPoseEstimator:
         # Fallback Strategy 3: Last resort - bbox median depth
         logger.debug("Center sampling failed, trying bbox median")
         grid_size = self.config.get("depth_sampling", {}).get("bbox_sample_grid", 10)
-        median_depth = self._sample_bbox_median_depth(depth_frame, bbox_cxcywh, grid_size)
+        median_depth = self._sample_bbox_median_depth(color_image, depth_frame, bbox_cxcywh, grid_size)
         
         if median_depth is not None and min_depth <= median_depth <= max_depth:
             # Use median depth for all 4 corners
@@ -1060,6 +1216,7 @@ class FruitPoseEstimator:
         confidence: float,
         class_name: str,
         class_id: int,
+        color_image: np.ndarray,
         depth_frame: Any,
         camera_matrix: np.ndarray,
         dist_coeffs: np.ndarray
@@ -1072,6 +1229,7 @@ class FruitPoseEstimator:
             confidence: Detection confidence
             class_name: Class label
             class_id: Numeric class ID
+            color_image: RGB image for color filtering
             depth_frame: RealSense depth frame
             camera_matrix: 3x3 camera intrinsic matrix
             dist_coeffs: Distortion coefficients
@@ -1095,7 +1253,7 @@ class FruitPoseEstimator:
         corners_2d = self._cxcywh_to_corners(bbox_cxcywh)
         
         # Sample depths at corners with adaptive fallback
-        depths, error, strategy, depth_offset = self._sample_corner_depths(depth_frame, bbox_cxcywh, corners_2d)
+        depths, error, strategy, depth_offset = self._sample_corner_depths(color_image, depth_frame, bbox_cxcywh, corners_2d)
         if error:
             return PoseEstimationResult(
                 bbox_cxcywh=bbox_cxcywh,
@@ -1220,7 +1378,7 @@ class FruitPoseEstimator:
         Estimate poses for multiple detections.
         
         Args:
-            color_image: RGB image (not currently used, kept for API consistency)
+            color_image: RGB image (used for color filtering in depth sampling)
             depth_frame: RealSense depth frame
             detections: List of Detection objects from inference_bbox
             bboxes_cxcywh: List of bounding boxes in (cx, cy, w, h) format
@@ -1241,6 +1399,7 @@ class FruitPoseEstimator:
                 confidence=detection.confidence,
                 class_name=detection.clazz,
                 class_id=detection.class_id,
+                color_image=color_image,
                 depth_frame=depth_frame,
                 camera_matrix=camera_matrix,
                 dist_coeffs=dist_coeffs

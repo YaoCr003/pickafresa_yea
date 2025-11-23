@@ -5,11 +5,11 @@ Tests combined color + depth stream configurations to ensure bandwidth is suffic
 Supports three testing modes:
 - 'paired': Tests matching resolution/fps for both streams (fastest)
 - 'independent': Tests best of each stream independently, then validates together
-- 'comprehensive': Tests all combinations of color × depth profiles (slowest, most thorough)
+- 'comprehensive': Tests all combinations of color x depth profiles (slowest, most thorough)
 
 Provides both CLI tool and API for programmatic use.
 
-Team YEA, 2025
+@aldrick-t, 2025
 '''
 
 from __future__ import annotations
