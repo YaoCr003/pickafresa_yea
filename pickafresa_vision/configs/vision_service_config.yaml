@@ -98,6 +98,14 @@ capture:
     save_depth: true              # Save depth data
     save_json: true               # Save detection/PnP results as JSON
     timestamp_format: "%Y%m%d_%H%M%S"
+  
+  # Supabase cloud upload
+  supabase:
+    enabled: false                # Enable Supabase uploads (requires credentials in .env)
+    upload_mode: "async"          # Options: "async" (non-blocking), "sync" (blocking)
+    on_capture: false             # Upload on every capture (if false, only on explicit request)
+    upload_rgb: true              # Upload RGB images
+    upload_json: true             # Upload JSON metadata
 
 # ==============================================================================
 # INFERENCE SETTINGS
