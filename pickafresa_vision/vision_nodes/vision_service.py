@@ -40,6 +40,7 @@ import sys
 import threading
 import time
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -55,6 +56,7 @@ if str(REPO_ROOT) not in sys.path:
 from pickafresa_vision.vision_tools.realsense_capture import RealSenseCapture
 from pickafresa_vision.vision_nodes.pnp_calc import FruitPoseEstimator
 from pickafresa_vision.vision_nodes.inference_filter import DetectionFilter
+from pickafresa_vision.vision_tools.supabase_uploader import SupabaseUploader
 
 # Local imports - Robot (for ROS2 logger)
 try:
@@ -166,6 +168,7 @@ class VisionService:
         self.pnp_estimator: Optional[FruitPoseEstimator] = None
         self.detection_filter: Optional[DetectionFilter] = None
         self.model_path: Optional[Path] = None  # Track model path for HUD
+        self.supabase_uploader: Optional[SupabaseUploader] = None  # Supabase cloud uploader
         
         # IPC
         self.server_socket: Optional[socket.socket] = None
@@ -281,6 +284,19 @@ class VisionService:
                 logger.info("Initializing detection filter...")
                 self.detection_filter = DetectionFilter(config_path=full_pnp_config_path)
                 logger.info("[OK] Detection filter initialized")
+            
+            # Initialize Supabase uploader (if enabled)
+            supabase_config = self.config.get("capture", {}).get("supabase", {})
+            if supabase_config.get("enabled", False):
+                logger.info("Initializing Supabase uploader...")
+                self.supabase_uploader = SupabaseUploader(enabled=True)
+                if self.supabase_uploader.is_enabled():
+                    logger.info("[OK] Supabase uploader initialized")
+                else:
+                    logger.warning("Supabase uploader failed to initialize (check .env credentials)")
+                    self.supabase_uploader = None
+            else:
+                logger.info("Supabase upload disabled in config")
             
             # Set running flag BEFORE starting threads
             self.running = True
@@ -581,10 +597,24 @@ class VisionService:
                 if self.frame_count % log_every == 0:
                     self._log_performance()
             
+            # Generate timestamp for saving
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            
+            # Save captures to disk and upload to Supabase (if configured)
+            if is_ipc_request:
+                save_config = self.config.get("capture", {}).get("save_captures", {})
+                if save_config.get("enabled", False):
+                    self._save_and_upload_capture(
+                        color_frame=color_frame,
+                        depth_frame=depth_frame,
+                        pnp_results=pnp_results,
+                        timestamp=timestamp
+                    )
+            
             return {
                 "success": True,
                 "detections": pnp_results,
-                "timestamp": time.strftime("%Y%m%d_%H%M%S"),
+                "timestamp": timestamp,
                 "frame_count": self.frame_count,
                 "processing_time_ms": total_time * 1000
             }
@@ -725,6 +755,105 @@ class VisionService:
         except Exception as e:
             logger.error(f"PnP computation error: {e}")
             return detections
+    
+    def _save_and_upload_capture(
+        self,
+        color_frame: np.ndarray,
+        depth_frame: Any,
+        pnp_results: List[Dict[str, Any]],
+        timestamp: str
+    ):
+        """
+        Save capture data to disk and upload to Supabase (if enabled).
+        
+        Args:
+            color_frame: RGB image
+            depth_frame: Depth frame
+            pnp_results: List of detection results with PnP data
+            timestamp: Timestamp string for filenames
+        """
+        try:
+            from pickafresa_vision.vision_tools.data_persistence import DataSaver
+            
+            save_config = self.config.get("capture", {}).get("save_captures", {})
+            captures_dir = REPO_ROOT / save_config.get("directory", "pickafresa_vision/captures")
+            
+            # Initialize DataSaver
+            data_saver = DataSaver(output_dir=captures_dir)
+            
+            # Prepare data for saving
+            # Convert PnP results dict to objects if needed (simplified - just save raw data)
+            # For now, we'll save the JSON data directly
+            
+            # Save raw image
+            if save_config.get("save_rgb", True):
+                data_saver.save_raw_image(color_frame, timestamp)
+            
+            # Save JSON metadata
+            if save_config.get("save_json", True):
+                # Build JSON structure similar to data_persistence format
+                intrinsics = self.camera.get_intrinsics() if self.camera else {}
+                
+                metadata = {
+                    "timestamp": timestamp,
+                    "timestamp_iso": datetime.now().isoformat(),
+                    "resolution": {
+                        "width": color_frame.shape[1],
+                        "height": color_frame.shape[0]
+                    },
+                    "camera_intrinsics": intrinsics.to_dict() if hasattr(intrinsics, 'to_dict') else str(intrinsics),
+                    "model_path": str(self.model_path) if self.model_path else None,
+                    "detections": pnp_results,
+                    "summary": {
+                        "total_detections": len(pnp_results),
+                        "successful_poses": sum(1 for r in pnp_results if r.get("success", False)),
+                        "failed_poses": sum(1 for r in pnp_results if not r.get("success", False)),
+                    }
+                }
+                
+                json_filename = f"{timestamp}_data.json"
+                json_filepath = captures_dir / json_filename
+                
+                with open(json_filepath, 'w', encoding='utf-8') as f:
+                    json.dump(metadata, f, indent=2, ensure_ascii=False)
+                
+                logger.info(f"Saved capture data: {timestamp}")
+                
+                # Upload to Supabase (if enabled)
+                supabase_config = self.config.get("capture", {}).get("supabase", {})
+                if supabase_config.get("enabled", False) and self.supabase_uploader:
+                    upload_mode = supabase_config.get("upload_mode", "async")
+                    upload_rgb = supabase_config.get("upload_rgb", True)
+                    upload_json = supabase_config.get("upload_json", True)
+                    
+                    if upload_rgb and upload_json:
+                        # Get file paths
+                        image_path = captures_dir / f"{timestamp}_raw.png"
+                        json_path = json_filepath
+                        
+                        if upload_mode == "async":
+                            # Non-blocking upload
+                            def upload_callback(success, message, results):
+                                if success:
+                                    logger.info(f"✓ Uploaded to Supabase: {timestamp}")
+                                else:
+                                    logger.warning(f"✗ Supabase upload failed: {message}")
+                            
+                            self.supabase_uploader.upload_capture_async(
+                                image_path,
+                                json_path,
+                                callback=upload_callback
+                            )
+                        else:
+                            # Blocking upload
+                            results = self.supabase_uploader.upload_capture(image_path, json_path)
+                            if results["success"]:
+                                logger.info(f"✓ Uploaded to Supabase: {timestamp}")
+                            else:
+                                logger.warning(f"✗ Supabase upload failed: {results.get('error')}")
+        
+        except Exception as e:
+            logger.error(f"Error saving/uploading capture: {e}")
     
     def _log_performance(self):
         """Log performance statistics."""
