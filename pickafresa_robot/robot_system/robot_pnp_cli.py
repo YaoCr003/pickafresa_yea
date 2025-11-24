@@ -41,6 +41,7 @@ if str(REPO_ROOT) not in sys.path:
 # Local imports
 from pickafresa_robot.robot_system.ros2_logger import create_logger
 from pickafresa_robot.robot_system.mqtt_gripper import MQTTGripperController
+from pickafresa_robot.robot_system.mqtt_bridge import MQTTBridge
 from pickafresa_robot.robot_system.pnp_handler import (
     PnPDataHandler, FruitDetection, create_transform_matrix
 )
@@ -474,6 +475,7 @@ class RobotPnPCLI:
         self.logger = None
         self.robodk_manager: Optional[RoboDKManager] = None
         self.mqtt_controller: Optional[MQTTGripperController] = None
+        self.mqtt_bridge: Optional[MQTTBridge] = None
         self.pnp_handler: Optional[PnPDataHandler] = None
         self.vision_client: Optional[VisionServiceClient] = None
         
@@ -486,6 +488,8 @@ class RobotPnPCLI:
         self.current_state: OperationState = OperationState.STARTUP
         self.statistics: SessionStatistics = SessionStatistics()
         self.shutdown_requested: bool = False
+        self.pause_requested: bool = False
+        self.emergency_stop_requested: bool = False
         
         print("\n" + "="*70)
         print(" "*15 + "ROBOT PNP TESTING TOOL")
@@ -888,8 +892,12 @@ class RobotPnPCLI:
         if not self._init_robodk():
             return False
         
-        # Initialize MQTT (optional)
+        # Initialize MQTT gripper (optional)
         if not self._init_mqtt():
+            return False
+        
+        # Initialize MQTT bridge for remote monitoring (optional)
+        if not self._init_mqtt_bridge():
             return False
         
         # Initialize PnP handler
@@ -985,6 +993,167 @@ class RobotPnPCLI:
             self.logger.warn("Continuing without MQTT...")
             self.mqtt_controller = None
             return True
+    
+    def _init_mqtt_bridge(self) -> bool:
+        """Initialize MQTT bridge for remote monitoring and control (optional)."""
+        mqtt_config = self.config.get('mqtt', {})
+        
+        if not mqtt_config.get('enabled', False):
+            self.logger.info("MQTT disabled, skipping bridge initialization...")
+            return True
+        
+        try:
+            self.logger.info("Initializing MQTT bridge for remote monitoring...")
+            
+            self.mqtt_bridge = MQTTBridge(
+                config=self.config,
+                logger=self.logger,
+                command_callback=self._handle_mqtt_command
+            )
+            
+            if self.mqtt_bridge.is_enabled():
+                if self.mqtt_bridge.start():
+                    self.logger.info("[OK] MQTT bridge started")
+                    
+                    # Publish initial settings
+                    self._publish_robot_settings()
+                    
+                    # Publish initial status
+                    self.mqtt_bridge.publish_status("STARTUP")
+                else:
+                    self.logger.warn("Failed to start MQTT bridge. Continuing without remote monitoring...")
+                    self.mqtt_bridge = None
+            else:
+                self.logger.info("MQTT bridge not available")
+                self.mqtt_bridge = None
+            
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"MQTT bridge initialization error: {e}")
+            self.logger.warn("Continuing without MQTT bridge...")
+            self.mqtt_bridge = None
+            return True
+    
+    def _handle_mqtt_command(self, command: str, params: Dict[str, Any]):
+        """
+        Handle MQTT commands from remote dashboard.
+        
+        Args:
+            command: Command name (stop, start, pause, resume, emergency_stop)
+            params: Command parameters
+        """
+        self.logger.info(f"MQTT command received: {command}")
+        
+        if self.mqtt_bridge:
+            self.mqtt_bridge.publish_log("INFO", f"Processing command: {command}")
+        
+        if command == "stop":
+            self.logger.info("Stop command received via MQTT - requesting graceful shutdown")
+            self.shutdown_requested = True
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("INFO", "Shutdown requested - will complete current operation and stop")
+        
+        elif command == "start":
+            self.logger.info("Start command received via MQTT")
+            # Reset shutdown/pause flags to resume operation
+            self.shutdown_requested = False
+            self.pause_requested = False
+            self.emergency_stop_requested = False
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("INFO", "Start command acknowledged - resuming operations")
+                self.mqtt_bridge.publish_status("RUNNING")
+        
+        elif command == "pause":
+            self.logger.info("Pause command received via MQTT - will pause at next safe point")
+            self.pause_requested = True
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("WARN", "Pause requested - will pause at end of current operation")
+                self.mqtt_bridge.publish_status("STANDBY", {"paused": True})
+        
+        elif command == "resume":
+            self.logger.info("Resume command received via MQTT")
+            self.pause_requested = False
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("INFO", "Resume command acknowledged - continuing operations")
+                self.mqtt_bridge.publish_status("RUNNING")
+        
+        elif command == "emergency_stop":
+            reason = params.get('reason', 'Emergency stop via MQTT')
+            self.logger.error(f"EMERGENCY STOP: {reason}")
+            self.emergency_stop_requested = True
+            self.shutdown_requested = True
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("ERROR", f"EMERGENCY STOP: {reason}")
+                self.mqtt_bridge.publish_status("ERROR", {"emergency_stop": True, "reason": reason})
+        
+        else:
+            self.logger.warn(f"Unknown MQTT command: {command}")
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("WARN", f"Unknown command received: {command}")
+    
+    def _publish_robot_settings(self):
+        """Publish current robot settings to MQTT."""
+        if not self.mqtt_bridge or not self.mqtt_bridge.is_connected():
+            return
+        
+        try:
+            settings = {
+                "run_mode": self.config.get('run_mode', 'manual_confirm'),
+                "continuous_operation": self.config.get('continuous_operation', {}).get('enabled', False),
+                "speed_profile": self.config.get('movement', {}).get('default_profile', 'normal'),
+                "mqtt_gripper": self.mqtt_controller is not None,
+                "vision_service": self.use_vision_service,
+                "simulation_mode": self.config.get('robodk', {}).get('simulation_mode', 'simulate')
+            }
+            
+            self.mqtt_bridge.publish_settings(settings)
+        
+        except Exception as e:
+            self.logger.error(f"Failed to publish settings: {e}")
+    
+    def _update_mqtt_state(self, state: OperationState, details: Optional[str] = None):
+        """
+        Update MQTT bridge with current state.
+        
+        Args:
+            state: New operation state
+            details: Optional details about the state
+        """
+        if not self.mqtt_bridge or not self.mqtt_bridge.is_connected():
+            return
+        
+        try:
+            # Map operation state to MQTT status
+            status_map = {
+                OperationState.STARTUP: "STARTUP",
+                OperationState.MOVING_TO_FOTO: "RUNNING",
+                OperationState.STANDBY: "STANDBY",
+                OperationState.CAPTURING: "RUNNING",
+                OperationState.PROCESSING: "RUNNING",
+                OperationState.VERIFYING: "RUNNING",
+                OperationState.SHUTDOWN: "OFF"
+            }
+            
+            # Publish status
+            mqtt_status = status_map.get(state, "RUNNING")
+            extra_data = {}
+            
+            if self.pause_requested:
+                mqtt_status = "STANDBY"
+                extra_data["paused"] = True
+            elif self.emergency_stop_requested:
+                mqtt_status = "ERROR"
+                extra_data["emergency_stop"] = True
+            
+            self.mqtt_bridge.publish_status(mqtt_status, extra_data)
+            
+            # Publish sequence step
+            sequence_step = state.value.upper()
+            self.mqtt_bridge.publish_sequence(sequence_step, details)
+        
+        except Exception as e:
+            self.logger.error(f"Failed to update MQTT state: {e}")
     
     def _init_pnp_handler(self) -> bool:
         """Initialize PnP data handler."""
@@ -1152,6 +1321,7 @@ class RobotPnPCLI:
         # Initial move to Home then Foto
         self.current_state = OperationState.MOVING_TO_FOTO
         self.statistics.current_state = self.current_state
+        self._update_mqtt_state(OperationState.MOVING_TO_FOTO, "Moving to photo position")
         
         self.logger.info("[State: MOVING_TO_FOTO] Moving to Foto (idle) position...")
         
@@ -1168,6 +1338,7 @@ class RobotPnPCLI:
             # STANDBY state
             self.current_state = OperationState.STANDBY
             self.statistics.current_state = self.current_state
+            self._update_mqtt_state(OperationState.STANDBY, "Waiting for trigger")
             
             self.logger.info("="*70)
             self.logger.info("[State: STANDBY] At Foto position - waiting for trigger")
@@ -1183,6 +1354,7 @@ class RobotPnPCLI:
                 # CAPTURING state
                 self.current_state = OperationState.CAPTURING
                 self.statistics.current_state = self.current_state
+                self._update_mqtt_state(OperationState.CAPTURING, "Capturing berry data")
                 
                 self.logger.info("[State: CAPTURING] Requesting capture from vision service...")
                 
@@ -1215,6 +1387,7 @@ class RobotPnPCLI:
                 # PROCESSING state
                 self.current_state = OperationState.PROCESSING
                 self.statistics.current_state = self.current_state
+                self._update_mqtt_state(OperationState.PROCESSING, f"Processing {len(ripe_berries)} berries")
                 
                 self.logger.info(f"[State: PROCESSING] Processing {len(ripe_berries)} berry/berries...")
                 
@@ -1231,6 +1404,7 @@ class RobotPnPCLI:
                 # VERIFYING state
                 self.current_state = OperationState.VERIFYING
                 self.statistics.current_state = self.current_state
+                self._update_mqtt_state(OperationState.VERIFYING, "Verifying pick success")
                 
                 self.logger.info("[State: VERIFYING] Verifying pick success...")
                 
@@ -1247,6 +1421,7 @@ class RobotPnPCLI:
         # SHUTDOWN state
         self.current_state = OperationState.SHUTDOWN
         self.statistics.current_state = self.current_state
+        self._update_mqtt_state(OperationState.SHUTDOWN, "System shutting down")
         
         self.logger.info("="*70)
         self.logger.info("[State: SHUTDOWN] Shutting down gracefully...")
@@ -3479,6 +3654,13 @@ class RobotPnPCLI:
         """Clean up resources."""
         if self.logger:
             self.logger.info("Cleaning up resources...")
+        
+        if self.mqtt_bridge:
+            try:
+                self.mqtt_bridge.publish_status("OFF")
+                self.mqtt_bridge.stop()
+            except:
+                pass
         
         if self.vision_client:
             try:

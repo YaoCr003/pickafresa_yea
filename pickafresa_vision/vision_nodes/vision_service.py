@@ -789,6 +789,23 @@ class VisionService:
             if save_config.get("save_rgb", True):
                 data_saver.save_raw_image(color_frame, timestamp)
             
+            # Save annotated image with bboxes and overlays
+            bbox_filepath = None
+            if save_config.get("save_rgb", True):
+                # Extract bboxes from pnp_results
+                bboxes_cxcywh = [r.get("bbox_cxcywh", [0, 0, 0, 0]) for r in pnp_results]
+                
+                # Create list of result objects for annotation (simplified)
+                # The save_annotated_image expects result objects, we'll pass the dicts
+                _, bbox_filepath = data_saver.save_annotated_image(
+                    color_frame,
+                    pnp_results,  # Pass the results dicts directly
+                    bboxes_cxcywh,
+                    timestamp=timestamp,
+                    show_all_detections=True,
+                    depth_frame=depth_frame
+                )
+            
             # Save JSON metadata
             if save_config.get("save_json", True):
                 # Build JSON structure similar to data_persistence format
@@ -827,8 +844,8 @@ class VisionService:
                     upload_json = supabase_config.get("upload_json", True)
                     
                     if upload_rgb and upload_json:
-                        # Get file paths
-                        image_path = captures_dir / f"{timestamp}_raw.png"
+                        # Get file paths - use bbox (annotated) image instead of raw
+                        image_path = bbox_filepath if bbox_filepath else captures_dir / f"{timestamp}_bbox.png"
                         json_path = json_filepath
                         
                         if upload_mode == "async":

@@ -101,10 +101,10 @@ capture:
   
   # Supabase cloud upload
   supabase:
-    enabled: false                # Enable Supabase uploads (requires credentials in .env)
+    enabled: true                 # Enable Supabase uploads (requires credentials in .env)
     upload_mode: "async"          # Options: "async" (non-blocking), "sync" (blocking)
-    on_capture: false             # Upload on every capture (if false, only on explicit request)
-    upload_rgb: true              # Upload RGB images
+    on_capture: true              # Upload on every capture (if false, only on explicit request)
+    upload_rgb: true              # Upload RGB images (bbox/annotated version)
     upload_json: true             # Upload JSON metadata
 
 # ==============================================================================

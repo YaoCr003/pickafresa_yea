@@ -34,10 +34,28 @@ Successfully implemented MQTT communication and Supabase cloud storage integrati
 ## MQTT Bridge (`mqtt_bridge.py`)
 
 ### Topics Published (robot -> dashboard):
-- `robot/log` - Real-time logs from ros2_logger (QoS 0)
-- `robot/status` - Robot state: RUNNING/STANDBY/ERROR/OFF (QoS 1)
-- `robot/sequence` - Current step in operation sequence (QoS 1)
-- `robot/settings` - Configuration settings as comma-separated string (QoS 1)
+
+All published topics use simplified array format for maximum compatibility:
+
+- **`robot/log`** (QoS 0) - Format: `[timestamp, level, message]`
+  ```json
+  ["2025-11-23T12:30:45.123456", "INFO", "Robot moving to FOTO position"]
+  ```
+
+- **`robot/status`** (QoS 1) - Format: `[timestamp, status, extra_info]`
+  ```json
+  ["2025-11-23T12:30:45.123456", "RUNNING", "paused=False"]
+  ```
+
+- **`robot/sequence`** (QoS 1) - Format: `[timestamp, step, details]`
+  ```json
+  ["2025-11-23T12:30:45.123456", "CAPTURING", "Capturing berry data"]
+  ```
+
+- **`robot/settings`** (QoS 1) - Format: `[timestamp, type, settings_string]`
+  ```json
+  ["2025-11-23T12:30:45.123456", "CONFIG", "run_mode=manual, speed=normal"]
+  ```
 
 ### Topics Subscribed (dashboard -> robot):
 - `robot/commands` - Remote commands with JSON payload:
@@ -61,7 +79,7 @@ def handle_command(command: str, params: dict):
 bridge = MQTTBridge(config, logger, command_callback=handle_command)
 bridge.start()
 
-# Publish updates
+# Publish updates (payloads are automatically formatted as arrays)
 bridge.publish_status("RUNNING")
 bridge.publish_log("INFO", "Robot initialized")
 bridge.publish_sequence("MOVING_TO_FOTO", "Moving to idle position")

@@ -5,22 +5,19 @@
 ### `robot/log`
 **Purpose**: Real-time log messages from robot system  
 **QoS**: 0 (fire and forget)  
-**Payload Format**:
+**Payload Format**: Array `[timestamp, level, message]`
+
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "level": "INFO|WARN|ERROR|DEBUG",
-  "message": "Log message text"
-}
+["2025-11-23T12:30:45.123456", "INFO", "Robot moving to FOTO position"]
 ```
 
-**Example**:
+**Level Values**: `INFO`, `WARN`, `ERROR`, `DEBUG`
+
+**Examples**:
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "level": "INFO",
-  "message": "Robot moving to FOTO position"
-}
+["2025-11-23T12:30:45.123456", "INFO", "Robot moving to FOTO position"]
+["2025-11-23T12:35:12.789012", "WARN", "Low gripper pressure detected"]
+["2025-11-23T12:40:33.456789", "ERROR", "Vision service connection lost"]
 ```
 
 ---
@@ -28,29 +25,25 @@
 ### `robot/status`
 **Purpose**: Current robot operational status  
 **QoS**: 1 (at least once)  
-**Payload Format**:
+**Payload Format**: Array `[timestamp, status, extra_info]`
+
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "status": "RUNNING|STANDBY|ERROR|OFF",
-  "...": "additional status fields"
-}
+["2025-11-23T12:30:45.123456", "RUNNING", "current_berry=2, total_berries=5"]
 ```
 
 **Status Values**:
+- `STARTUP` - Initial system startup
 - `RUNNING` - Robot actively executing tasks
 - `STANDBY` - Robot idle, waiting for trigger or command
 - `ERROR` - Robot in error state
 - `OFF` - Robot system offline/shutdown
 
-**Example**:
+**Examples**:
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "status": "RUNNING",
-  "current_berry": 2,
-  "total_berries": 5
-}
+["2025-11-23T12:30:45.123456", "RUNNING", ""]
+["2025-11-23T12:31:15.789012", "STANDBY", "paused=True"]
+["2025-11-23T12:35:22.456789", "ERROR", "emergency_stop=True"]
+["2025-11-23T18:00:00.000000", "OFF", ""]
 ```
 
 ---
@@ -58,13 +51,10 @@
 ### `robot/sequence`
 **Purpose**: Current step in robot operation sequence  
 **QoS**: 1 (at least once)  
-**Payload Format**:
+**Payload Format**: Array `[timestamp, step, details]`
+
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "step": "sequence_step_name",
-  "details": "Optional details about the step"
-}
+["2025-11-23T12:30:45.123456", "PICKING", "Berry 2/5 at position (150, 220, 350mm)"]
 ```
 
 **Sequence Steps**:
@@ -78,13 +68,13 @@
 - `VERIFYING` - Verifying pick success
 - `SHUTDOWN` - Graceful shutdown in progress
 
-**Example**:
+**Examples**:
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "step": "PICKING",
-  "details": "Berry 2/5 at position (150, 220, 350mm)"
-}
+["2025-11-23T12:30:45.123456", "MOVING_TO_FOTO", "Moving to photo position"]
+["2025-11-23T12:31:00.123456", "STANDBY", "Waiting for trigger"]
+["2025-11-23T12:31:30.789012", "CAPTURING", "Capturing berry data"]
+["2025-11-23T12:32:15.456789", "PROCESSING", "Processing 5 berries"]
+["2025-11-23T12:33:00.123456", "VERIFYING", "Verifying pick success"]
 ```
 
 ---
@@ -92,17 +82,10 @@
 ### `robot/settings`
 **Purpose**: Current robot configuration/settings  
 **QoS**: 1 (at least once)  
-**Payload Format**:
+**Payload Format**: Array `[timestamp, type, settings_string]`
+
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "settings": "key1=value1, key2=value2, key3=value3",
-  "settings_dict": {
-    "key1": "value1",
-    "key2": "value2",
-    "key3": "value3"
-  }
-}
+["2025-11-23T12:30:45.123456", "CONFIG", "run_mode=manual_confirm, speed_profile=normal, continuous_operation=False"]
 ```
 
 **Common Settings**:
@@ -113,17 +96,10 @@
 - `vision_service` - true/false
 - `gripper_type` - MQTT gripper type
 
-**Example**:
+**Examples**:
 ```json
-{
-  "timestamp": "2025-11-23T12:30:45.123456",
-  "settings": "run_mode=autonomous, speed_profile=normal, continuous_operation=true",
-  "settings_dict": {
-    "run_mode": "autonomous",
-    "speed_profile": "normal",
-    "continuous_operation": true
-  }
-}
+["2025-11-23T12:30:45.123456", "CONFIG", "run_mode=autonomous, speed_profile=normal, continuous_operation=True"]
+["2025-11-23T12:30:45.123456", "CONFIG", "run_mode=manual_confirm, continuous_operation=False, mqtt_gripper=True, vision_service=True, simulation_mode=simulate"]
 ```
 
 ---
@@ -163,7 +139,7 @@ Start continuous operation
 }
 ```
 
-#### `pause` (Future)
+#### `pause`
 Pause current operation
 ```json
 {
@@ -172,7 +148,7 @@ Pause current operation
 }
 ```
 
-#### `resume` (Future)
+#### `resume`
 Resume paused operation
 ```json
 {
@@ -181,7 +157,7 @@ Resume paused operation
 }
 ```
 
-#### `emergency_stop` (Future)
+#### `emergency_stop`
 Emergency stop (immediate halt)
 ```json
 {
@@ -214,13 +190,17 @@ def on_message(client, userdata, msg):
     payload = json.loads(msg.payload.decode('utf-8'))
     
     if topic == "robot/log":
-        print(f"[{payload['level']}] {payload['message']}")
+        timestamp, level, message = payload
+        print(f"[{timestamp}] [{level}] {message}")
     elif topic == "robot/status":
-        print(f"Status: {payload['status']}")
+        timestamp, status, extra = payload
+        print(f"[{timestamp}] Status: {status} | {extra}")
     elif topic == "robot/sequence":
-        print(f"Step: {payload['step']} - {payload.get('details', '')}")
+        timestamp, step, details = payload
+        print(f"[{timestamp}] Step: {step} - {details}")
     elif topic == "robot/settings":
-        print(f"Settings: {payload['settings']}")
+        timestamp, config_type, settings = payload
+        print(f"[{timestamp}] {config_type}: {settings}")
 
 client = mqtt.Client()
 client.on_connect = on_connect
@@ -262,13 +242,17 @@ client.on('message', (topic, message) => {
     const payload = JSON.parse(message.toString());
     
     if (topic === 'robot/log') {
-        console.log(`[${payload.level}] ${payload.message}`);
+        const [timestamp, level, msg] = payload;
+        console.log(`[${timestamp}] [${level}] ${msg}`);
     } else if (topic === 'robot/status') {
-        console.log(`Status: ${payload.status}`);
+        const [timestamp, status, extra] = payload;
+        console.log(`[${timestamp}] Status: ${status} | ${extra}`);
     } else if (topic === 'robot/sequence') {
-        console.log(`Step: ${payload.step}`);
+        const [timestamp, step, details] = payload;
+        console.log(`[${timestamp}] Step: ${step} - ${details}`);
     } else if (topic === 'robot/settings') {
-        console.log(`Settings: ${payload.settings}`);
+        const [timestamp, type, settings] = payload;
+        console.log(`[${timestamp}] ${type}: ${settings}`);
     }
 });
 

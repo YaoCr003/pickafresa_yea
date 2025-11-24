@@ -207,14 +207,27 @@ class DataSaver:
                 return None
         
         for result, bbox in zip(results, bboxes_cxcywh):
-            # If show_all is False and PnP failed, we still want to draw basic detection info
-            # so only skip when explicitly asked to hide failures.
-            if not show_all and not getattr(result, "success", False):
-                # Draw detection anyway but in red with depth (if available)
-                pass
+            # Support both dict and object result formats
+            if isinstance(result, dict):
+                success = result.get("success", False)
+                class_name = result.get("class_name", "cls")
+                conf = float(result.get("confidence", 0.0))
+                median_depth = result.get("median_depth")
+                position_cam = result.get("position_cam")
+                error_reason = result.get("error_reason", "")
+            else:
+                success = bool(getattr(result, "success", False))
+                class_name = getattr(result, "class_name", "cls")
+                conf = float(getattr(result, "confidence", 0.0))
+                median_depth = getattr(result, "median_depth", None)
+                position_cam = getattr(result, "position_cam", None)
+                error_reason = getattr(result, "error_reason", "")
+            
+            # If show_all is False and PnP failed, skip
+            if not show_all and not success:
+                continue
             
             # Determine color
-            success = bool(getattr(result, "success", False))
             color = (0, 255, 0) if success else (255, 0, 0)
 
             # Convert cxcywh to xyxy for drawing
@@ -224,12 +237,9 @@ class DataSaver:
             cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
             
             # Prepare label text (always show class + conf + depth if available)
-            class_name = getattr(result, "class_name", "cls")
-            conf = float(getattr(result, "confidence", 0.0))
-            # Prefer estimator median depth if present, else sample from depth_frame
             depth_m = None
-            if getattr(result, "median_depth", None) is not None:
-                depth_m = float(result.median_depth)
+            if median_depth is not None:
+                depth_m = float(median_depth)
             elif depth_frame is not None:
                 depth_m = median_depth_in_bbox(depth_frame, (x1, y1, x2, y2))
 
@@ -237,11 +247,11 @@ class DataSaver:
             label = f"{class_name} {conf:.2f}{depth_text}"
 
             # Coordinates or reason line
-            if success and getattr(result, "position_cam", None) is not None:
-                x, y, z = result.position_cam
+            if success and position_cam is not None:
+                x, y, z = position_cam
                 coord_text = f"xyz:[{x:.3f},{y:.3f},{z:.3f}]m"
             else:
-                coord_text = (result.error_reason[:30] if getattr(result, "error_reason", None) else "")
+                coord_text = (error_reason[:30] if error_reason else "")
             
             # Draw label background
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)

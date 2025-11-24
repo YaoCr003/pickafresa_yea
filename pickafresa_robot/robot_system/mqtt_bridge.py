@@ -207,16 +207,19 @@ class MQTTBridge:
         Args:
             level: Log level (INFO, WARN, ERROR, DEBUG)
             message: Log message
+        
+        Format: [timestamp, level, message]
+        Example: ["2025-11-23T12:30:45.123456", "INFO", "Robot moving to FOTO position"]
         """
         if not self.is_connected():
             return
         
         try:
-            payload = {
-                "timestamp": datetime.now().isoformat(),
-                "level": level,
-                "message": message
-            }
+            payload = [
+                datetime.now().isoformat(),
+                level,
+                message
+            ]
             
             self.client.publish(
                 self.topic_log,
@@ -234,18 +237,24 @@ class MQTTBridge:
         Args:
             status: Robot status (RUNNING, STANDBY, ERROR, OFF, etc.)
             extra_data: Optional additional status data
+        
+        Format: [timestamp, status, extra_info]
+        Example: ["2025-11-23T12:30:45.123456", "RUNNING", "paused=False"]
         """
         if not self.is_connected():
             return
         
         try:
-            payload = {
-                "timestamp": datetime.now().isoformat(),
-                "status": status
-            }
-            
+            # Convert extra_data to string if provided
+            extra_str = ""
             if extra_data:
-                payload.update(extra_data)
+                extra_str = ", ".join([f"{k}={v}" for k, v in extra_data.items()])
+            
+            payload = [
+                datetime.now().isoformat(),
+                status,
+                extra_str
+            ]
             
             self.client.publish(
                 self.topic_status,
@@ -263,16 +272,19 @@ class MQTTBridge:
         Args:
             sequence_step: Current step (MOVING_TO_FOTO, CAPTURING, PICKING, etc.)
             details: Optional details about the step
+        
+        Format: [timestamp, step, details]
+        Example: ["2025-11-23T12:30:45.123456", "CAPTURING", "Capturing berry data"]
         """
         if not self.is_connected():
             return
         
         try:
-            payload = {
-                "timestamp": datetime.now().isoformat(),
-                "step": sequence_step,
-                "details": details
-            }
+            payload = [
+                datetime.now().isoformat(),
+                sequence_step,
+                details if details else ""
+            ]
             
             self.client.publish(
                 self.topic_sequence,
@@ -289,19 +301,22 @@ class MQTTBridge:
         
         Args:
             settings: Dictionary of settings to publish
+        
+        Format: [timestamp, type, settings_string]
+        Example: ["2025-11-23T12:30:45.123456", "CONFIG", "run_mode=manual, speed=normal"]
         """
         if not self.is_connected():
             return
         
         try:
-            # Convert settings to comma-separated string as per requirements
+            # Convert settings to comma-separated string
             settings_str = ", ".join([f"{k}={v}" for k, v in settings.items()])
             
-            payload = {
-                "timestamp": datetime.now().isoformat(),
-                "settings": settings_str,
-                "settings_dict": settings  # Also include dict for easier parsing
-            }
+            payload = [
+                datetime.now().isoformat(),
+                "CONFIG",
+                settings_str
+            ]
             
             self.client.publish(
                 self.topic_settings,
