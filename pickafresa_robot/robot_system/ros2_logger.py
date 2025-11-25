@@ -41,7 +41,8 @@ class ROS2StyleLogger:
         console_level: str = "INFO",
         file_level: str = "DEBUG",
         timestamp_format: str = "%Y-%m-%d %H:%M:%S.%f",
-        overwrite_log: bool = True
+        overwrite_log: bool = True,
+        mqtt_callback: Optional[callable] = None
     ):
         """
         Initialize ROS2-style logger.
@@ -53,9 +54,11 @@ class ROS2StyleLogger:
             file_level: Logging level for file output
             timestamp_format: Format string for timestamps
             overwrite_log: If True, overwrite log file on start; if False, append
+            mqtt_callback: Optional callback function(level, message) to forward logs to MQTT
         """
         self.node_name = node_name
         self.timestamp_format = timestamp_format
+        self.mqtt_callback = mqtt_callback
         
         # Create logger
         self.logger = logging.getLogger(node_name)
@@ -116,14 +119,20 @@ class ROS2StyleLogger:
     def debug(self, message: str) -> None:
         """Log debug message."""
         self.logger.debug(message)
+        if self.mqtt_callback:
+            self.mqtt_callback("DEBUG", message)
     
     def info(self, message: str) -> None:
         """Log info message."""
         self.logger.info(message)
+        if self.mqtt_callback:
+            self.mqtt_callback("INFO", message)
     
     def warn(self, message: str) -> None:
         """Log warning message."""
         self.logger.warning(message)
+        if self.mqtt_callback:
+            self.mqtt_callback("WARN", message)
     
     def warning(self, message: str) -> None:
         """Log warning message (alias)."""
@@ -132,10 +141,14 @@ class ROS2StyleLogger:
     def error(self, message: str) -> None:
         """Log error message."""
         self.logger.error(message)
+        if self.mqtt_callback:
+            self.mqtt_callback("ERROR", message)
     
     def critical(self, message: str) -> None:
         """Log critical message."""
         self.logger.critical(message)
+        if self.mqtt_callback:
+            self.mqtt_callback("CRITICAL", message)
     
     def set_level(self, level: str) -> None:
         """Change logging level dynamically."""
@@ -149,7 +162,8 @@ def create_logger(
     console_level: str = "INFO",
     file_level: str = "DEBUG",
     use_timestamp: bool = False,
-    overwrite_log: bool = True
+    overwrite_log: bool = True,
+    mqtt_callback: Optional[callable] = None
 ) -> ROS2StyleLogger:
     """
     Factory function to create a ROS2-style logger.
@@ -162,6 +176,7 @@ def create_logger(
         file_level: File logging level
         use_timestamp: If True, add timestamp to filename; if False, use fixed name
         overwrite_log: If True, overwrite log on start; if False, append
+        mqtt_callback: Optional callback function(level, message) to forward logs to MQTT
     
     Returns:
         Configured ROS2StyleLogger instance
@@ -183,7 +198,8 @@ def create_logger(
         log_file=log_file,
         console_level=console_level,
         file_level=file_level,
-        overwrite_log=overwrite_log
+        overwrite_log=overwrite_log,
+        mqtt_callback=mqtt_callback
     )
 
 
