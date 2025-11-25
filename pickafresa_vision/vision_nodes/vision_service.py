@@ -838,15 +838,21 @@ class VisionService:
                 
                 # Upload to Supabase (if enabled)
                 supabase_config = self.config.get("capture", {}).get("supabase", {})
+                logger.debug(f"Supabase config: enabled={supabase_config.get('enabled', False)}, uploader_ready={self.supabase_uploader is not None}")
+                
                 if supabase_config.get("enabled", False) and self.supabase_uploader:
                     upload_mode = supabase_config.get("upload_mode", "async")
                     upload_rgb = supabase_config.get("upload_rgb", True)
                     upload_json = supabase_config.get("upload_json", True)
                     
+                    logger.info(f"Starting Supabase upload (mode: {upload_mode})...")
+                    
                     if upload_rgb and upload_json:
                         # Get file paths - use bbox (annotated) image instead of raw
                         image_path = bbox_filepath if bbox_filepath else captures_dir / f"{timestamp}_bbox.png"
                         json_path = json_filepath
+                        
+                        logger.info(f"Upload paths: image={image_path}, json={json_path}")
                         
                         if upload_mode == "async":
                             # Non-blocking upload
@@ -868,9 +874,16 @@ class VisionService:
                                 logger.info(f"✓ Uploaded to Supabase: {timestamp}")
                             else:
                                 logger.warning(f"✗ Supabase upload failed: {results.get('error')}")
+                else:
+                    if not supabase_config.get("enabled", False):
+                        logger.debug("Supabase upload disabled in config")
+                    elif not self.supabase_uploader:
+                        logger.debug("Supabase uploader not initialized")
         
         except Exception as e:
             logger.error(f"Error saving/uploading capture: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def _log_performance(self):
         """Log performance statistics."""
