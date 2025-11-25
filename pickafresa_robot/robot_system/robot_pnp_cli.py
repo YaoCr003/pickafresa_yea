@@ -489,7 +489,12 @@ class RobotPnPCLI:
         self.statistics: SessionStatistics = SessionStatistics()
         self.shutdown_requested: bool = False
         self.pause_requested: bool = False
+        self.pause_via_keyboard: bool = False  # Track if pause came from keyboard
         self.emergency_stop_requested: bool = False
+        
+        # Keyboard listener thread for pause/resume (if available)
+        self.keyboard_thread = None
+        self.keyboard_running = False
         
         print("\n" + "="*70)
         print(" "*15 + "ROBOT PNP TESTING TOOL")
@@ -534,6 +539,14 @@ class RobotPnPCLI:
             else:
                 print("\n!!! Program interrupted by user (Ctrl+C) !!!")
                 print("Attempting to return robot to HOME position...")
+            
+            # Publish SHUTDOWN sequence to MQTT
+            if hasattr(self, 'mqtt_bridge') and self.mqtt_bridge and self.mqtt_bridge.is_connected():
+                try:
+                    self.mqtt_bridge.publish_sequence("SHUTDOWN", "Emergency shutdown via Ctrl+C")
+                    self.mqtt_bridge.publish_status("OFF", {"reason": "user_interrupt"})
+                except:
+                    pass
             
             # End statistics session
             if hasattr(self, 'statistics'):
@@ -908,6 +921,9 @@ class RobotPnPCLI:
         if not self._init_vision_service():
             return False
         
+        # Initialize keyboard monitoring for pause/resume (optional)
+        self._init_keyboard_monitoring()
+        
         self.logger.info("[OK] All components initialized successfully")
         return True
     
@@ -1014,6 +1030,10 @@ class RobotPnPCLI:
             if self.mqtt_bridge.is_enabled():
                 if self.mqtt_bridge.start():
                     self.logger.info("[OK] MQTT bridge started")
+                    
+                    # Connect logger to MQTT bridge for automatic log publishing
+                    self.logger.mqtt_callback = self.mqtt_bridge.publish_log
+                    self.logger.info("[OK] Logger connected to MQTT bridge")
                     
                     # Publish initial settings
                     self._publish_robot_settings()
@@ -1137,14 +1157,14 @@ class RobotPnPCLI:
             
             # Publish status
             mqtt_status = status_map.get(state, "RUNNING")
-            extra_data = {}
+            extra_data = None  # Use None instead of {} to show proper format
             
             if self.pause_requested:
                 mqtt_status = "STANDBY"
-                extra_data["paused"] = True
+                extra_data = {"paused": True}
             elif self.emergency_stop_requested:
                 mqtt_status = "ERROR"
-                extra_data["emergency_stop"] = True
+                extra_data = {"emergency_stop": True}
             
             self.mqtt_bridge.publish_status(mqtt_status, extra_data)
             
@@ -1274,6 +1294,71 @@ class RobotPnPCLI:
             self.use_vision_service = False
             self.vision_client = None
             return True
+    
+    def _init_keyboard_monitoring(self):
+        """Initialize keyboard monitoring for pause/resume control."""
+        if not HAVE_KEYBOARD:
+            self.logger.info("Keyboard monitoring not available on this platform")
+            self.logger.info("(Use MQTT commands for pause/resume instead)")
+            return
+        
+        try:
+            import threading
+            self.keyboard_running = True
+            self.keyboard_thread = threading.Thread(target=self._keyboard_monitor_loop, daemon=True)
+            self.keyboard_thread.start()
+            self.logger.info("✓ Keyboard monitoring active (Press SPACE or 'P' to pause/resume)")
+        except Exception as e:
+            self.logger.warn(f"Could not start keyboard monitoring: {e}")
+    
+    def _keyboard_monitor_loop(self):
+        """Background thread to monitor keyboard input for pause/resume."""
+        import keyboard as kb
+        
+        # Track previous state to detect key press (not hold)
+        space_pressed = False
+        p_pressed = False
+        
+        while self.keyboard_running:
+            try:
+                # Check for space bar or 'P' key
+                space_state = kb.is_pressed('space')
+                p_state = kb.is_pressed('p')
+                
+                # Detect rising edge (key just pressed)
+                if space_state and not space_pressed:
+                    self._toggle_pause_keyboard()
+                elif p_state and not p_pressed:
+                    self._toggle_pause_keyboard()
+                
+                space_pressed = space_state
+                p_pressed = p_state
+                
+                # Small delay to avoid busy waiting
+                time.sleep(0.1)
+                
+            except Exception as e:
+                self.logger.error(f"Keyboard monitoring error: {e}")
+                break
+    
+    def _toggle_pause_keyboard(self):
+        """Toggle pause state via keyboard (overrides MQTT)."""
+        self.pause_via_keyboard = True  # Mark as keyboard-initiated
+        
+        if self.pause_requested:
+            # Currently paused - resume
+            self.pause_requested = False
+            self.logger.info("⏵  RESUMED via keyboard")
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("INFO", "Resumed via keyboard")
+                self.mqtt_bridge.publish_status("RUNNING")
+        else:
+            # Currently running - pause
+            self.pause_requested = True
+            self.logger.info("⏸  PAUSED via keyboard (will pause at safe point)")
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_log("WARN", "Paused via keyboard")
+                self.mqtt_bridge.publish_status("STANDBY", {"paused": True, "source": "keyboard"})
     
     def _get_move_type_from_sequence(self, step_name: str, default: str = "joint") -> str:
         """
@@ -2038,73 +2123,150 @@ class RobotPnPCLI:
         """Move to home position."""
         self.logger.info("Moving to HOME position...")
         
-        # Check if collision avoidance is enabled
-        collision_config = self.config.get('collision_avoidance', {})
-        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
-        use_collision_avoidance = collision_config.get('enabled', True)
+        # Import safety exceptions
+        from pickafresa_robot.robot_system.robodk_manager import (
+            RobotSafetyError, RobotEmergencyStopError, RobotCollisionError
+        )
         
-        confirm = self._get_confirmation_setting('movements', True)
-        highlight = self.config.get('visualization', {}).get('highlight_target', True)
+        try:
+            # Check if collision avoidance is enabled
+            collision_config = self.config.get('collision_avoidance', {})
+            collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
+            use_collision_avoidance = collision_config.get('enabled', True)
+            
+            confirm = self._get_confirmation_setting('movements', True)
+            highlight = self.config.get('visualization', {}).get('highlight_target', True)
+            
+            # Get move_type from sequence configuration
+            move_type = self._get_move_type_from_sequence("move_home", default="joint")
+            
+            if use_collision_avoidance:
+                success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
+                    target_name="Home",
+                    move_type=move_type,
+                    confirm=confirm,
+                    highlight=highlight
+                )
+                if not success:
+                    self.logger.error(f"Failed to reach Home: {message}")
+                    return False
+                if message:
+                    self.logger.info(f"Home movement: {message}")
+                return True
+            else:
+                return self.robodk_manager.move_to_target(
+                    target_name="Home",
+                    move_type=move_type,
+                    confirm=confirm,
+                    highlight=highlight
+                )
         
-        # Get move_type from sequence configuration
-        move_type = self._get_move_type_from_sequence("move_home", default="joint")
+        except RobotEmergencyStopError as e:
+            self.logger.error(f"🚨 EMERGENCY STOP DETECTED: {e}")
+            self.logger.error("System HALTED - Reset e-stop on teach pendant to continue")
+            self.emergency_stop_requested = True
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_status("ERROR", {"emergency_stop": True})
+            # Wait for user to reset
+            input("\nPress Enter after resetting emergency stop...")
+            # Try to reset safety state
+            if self.robodk_manager.reset_safety_state():
+                self.emergency_stop_requested = False
+                self.logger.info("Safety state reset - you may retry operation")
+            return False
         
-        if use_collision_avoidance:
-            success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
-                target_name="Home",
-                move_type=move_type,
-                confirm=confirm,
-                highlight=highlight
-            )
-            if not success:
-                self.logger.error(f"Failed to reach Home: {message}")
-                return False
-            if message:
-                self.logger.info(f"Home movement: {message}")
-            return True
-        else:
-            return self.robodk_manager.move_to_target(
-                target_name="Home",
-                move_type=move_type,
-                confirm=confirm,
-                highlight=highlight
-            )
+        except RobotCollisionError as e:
+            self.logger.error(f"⚠️  COLLISION DETECTED: {e}")
+            self.logger.error("System HALTED - Check robot and clear collision")
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_status("ERROR", {"collision": True})
+            # Ask user what to do
+            response = input("\nCollision cleared? Retry movement? [y/N]: ").strip().lower()
+            if response == 'y':
+                if self.robodk_manager.reset_safety_state():
+                    self.logger.info("Safety reset - retrying movement...")
+                    return self._move_home()  # Retry
+            return False
+        
+        except RobotSafetyError as e:
+            self.logger.error(f"⛔ SAFETY ERROR: {e}")
+            self.logger.error("System HALTED - Manual intervention required")
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_status("ERROR", {"safety_error": str(e)})
+            return False
     
     def _move_foto(self) -> bool:
         """Move to foto/camera position."""
         self.logger.info("Moving to FOTO (camera) position...")
         
-        # Check if collision avoidance is enabled
-        collision_config = self.config.get('collision_avoidance', {})
-        collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
-        use_collision_avoidance = collision_config.get('enabled', True)
+        # Import safety exceptions
+        from pickafresa_robot.robot_system.robodk_manager import (
+            RobotSafetyError, RobotEmergencyStopError, RobotCollisionError
+        )
         
-        confirm = self._get_confirmation_setting('movements', True)
-        highlight = self.config.get('visualization', {}).get('highlight_target', True)
+        try:
+            # Check if collision avoidance is enabled
+            collision_config = self.config.get('collision_avoidance', {})
+            collision_config = self._enrich_collision_config(collision_config)  # Add run_mode and simulation_mode
+            use_collision_avoidance = collision_config.get('enabled', True)
+            
+            confirm = self._get_confirmation_setting('movements', True)
+            highlight = self.config.get('visualization', {}).get('highlight_target', True)
+            
+            # Get move_type from sequence configuration
+            move_type = self._get_move_type_from_sequence("move_foto", default="joint")
+            
+            if use_collision_avoidance:
+                success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
+                    target_name="Foto",
+                    move_type=move_type,
+                    confirm=confirm,
+                    highlight=highlight
+                )
+                if not success:
+                    self.logger.error(f"Failed to reach Foto: {message}")
+                    return False
+                if message:
+                    self.logger.info(f"Foto movement: {message}")
+                return True
+            else:
+                return self.robodk_manager.move_to_target(
+                    target_name="Foto",
+                    move_type=move_type,
+                    confirm=confirm,
+                    highlight=highlight
+                )
         
-        # Get move_type from sequence configuration
-        move_type = self._get_move_type_from_sequence("move_foto", default="joint")
+        except RobotEmergencyStopError as e:
+            self.logger.error(f"🚨 EMERGENCY STOP DETECTED: {e}")
+            self.logger.error("System HALTED - Reset e-stop on teach pendant to continue")
+            self.emergency_stop_requested = True
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_status("ERROR", {"emergency_stop": True})
+            input("\nPress Enter after resetting emergency stop...")
+            if self.robodk_manager.reset_safety_state():
+                self.emergency_stop_requested = False
+                self.logger.info("Safety state reset - you may retry operation")
+            return False
         
-        if use_collision_avoidance:
-            success, message = self.robodk_manager.move_to_target_with_collision_avoidance(
-                target_name="Foto",
-                move_type=move_type,
-                confirm=confirm,
-                highlight=highlight
-            )
-            if not success:
-                self.logger.error(f"Failed to reach Foto: {message}")
-                return False
-            if message:
-                self.logger.info(f"Foto movement: {message}")
-            return True
-        else:
-            return self.robodk_manager.move_to_target(
-                target_name="Foto",
-                move_type=move_type,
-                confirm=confirm,
-                highlight=highlight
-            )
+        except RobotCollisionError as e:
+            self.logger.error(f"⚠️  COLLISION DETECTED: {e}")
+            self.logger.error("System HALTED - Check robot and clear collision")
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_status("ERROR", {"collision": True})
+            response = input("\nCollision cleared? Retry movement? [y/N]: ").strip().lower()
+            if response == 'y':
+                if self.robodk_manager.reset_safety_state():
+                    self.logger.info("Safety reset - retrying movement...")
+                    return self._move_foto()
+            return False
+        
+        except RobotSafetyError as e:
+            self.logger.error(f"⛔ SAFETY ERROR: {e}")
+            self.logger.error("System HALTED - Manual intervention required")
+            if self.mqtt_bridge:
+                self.mqtt_bridge.publish_status("ERROR", {"safety_error": str(e)})
+            return False
     
     def _load_pnp_data(self) -> bool:
         """Load PnP data from vision service, API, or JSON."""
@@ -2743,6 +2905,16 @@ class RobotPnPCLI:
             # Replace {berry_letter} placeholder in target names
             if 'target' in step and '{berry_letter}' in step['target']:
                 step['target'] = step['target'].replace('{berry_letter}', berry_letter)
+            
+            # Publish MQTT sequence update for PICKING phase
+            if step_type == 'move' and 'pick_' in step.get('target', ''):
+                if self.mqtt_bridge and self.mqtt_bridge.is_connected():
+                    self.mqtt_bridge.publish_sequence("PICKING", f"Picking berry {berry_letter}")
+            
+            # Publish MQTT sequence update for PLACING phase
+            if step_type == 'move' and step.get('target', '') == 'place_final':
+                if self.mqtt_bridge and self.mqtt_bridge.is_connected():
+                    self.mqtt_bridge.publish_sequence("PLACING", f"Placing berry {berry_letter}")
             
             self.logger.info(f"  [{i}/{len(per_berry_steps)}] {step_name}")
             
@@ -3655,8 +3827,21 @@ class RobotPnPCLI:
         if self.logger:
             self.logger.info("Cleaning up resources...")
         
+        # Stop keyboard monitoring thread
+        if self.keyboard_running:
+            self.keyboard_running = False
+            if self.keyboard_thread:
+                try:
+                    self.keyboard_thread.join(timeout=1.0)
+                except:
+                    pass
+        
         if self.mqtt_bridge:
             try:
+                if self.logger:
+                    self.logger.info("Stopping MQTT bridge...")
+                # Publish SHUTDOWN sequence and OFF status
+                self.mqtt_bridge.publish_sequence("SHUTDOWN", "System shutting down")
                 self.mqtt_bridge.publish_status("OFF")
                 self.mqtt_bridge.stop()
             except:
@@ -3670,6 +3855,8 @@ class RobotPnPCLI:
         
         if self.mqtt_controller:
             try:
+                if self.logger:
+                    self.logger.info("Disconnecting from MQTT broker...")
                 self.mqtt_controller.disconnect()
             except:
                 pass
