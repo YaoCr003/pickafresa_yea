@@ -163,7 +163,7 @@ class VisionServiceClient:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(self.timeout)
             self.socket.connect((self.host, self.port))
-            self._log("info", f"✓ Connected to vision service at {self.host}:{self.port}")
+            self._log("info", f"[OK] Connected to vision service at {self.host}:{self.port}")
             return True
         
         except socket.timeout:
@@ -250,7 +250,7 @@ class VisionServiceClient:
         # Sort by confidence (highest first)
         detections.sort(key=lambda d: -d.confidence)
         
-        self._log("info", f"✓ Received {len(detections)} valid detections from vision service")
+        self._log("info", f"[OK] Received {len(detections)} valid detections from vision service")
         
         return detections
     

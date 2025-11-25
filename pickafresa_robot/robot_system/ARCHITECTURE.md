@@ -12,49 +12,49 @@ for Team YEA
 The robot PnP system has been refactored into a modular, service-based architecture:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    ROBOT PnP SYSTEM                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────────┐         ┌──────────────────┐            │
-│  │ robot_pnp_cli    │         │ robot_pnp_manager│            │
-│  │ (testing tool)   │         │ (local admin CLI)│            │
-│  └────────┬─────────┘         └────────┬─────────┘            │
-│           │                             │                       │
-│           └─────────────┬───────────────┘                       │
-│                         │                                       │
-│              ┌──────────▼──────────┐                           │
-│              │ robot_pnp_service   │◄────┐                     │
-│              │ (IPC server:5556)   │     │                     │
-│              └──────────┬──────────┘     │                     │
-│                         │                │                     │
-│              ┌──────────▼──────────┐     │                     │
-│              │ robot_pnp_controller│     │                     │
-│              │ (core logic)        │     │                     │
-│              └──────────┬──────────┘     │                     │
-│                         │                │                     │
-│     ┌───────────────────┼────────────────┼─────────┐          │
-│     │  Shared Modules   │                │         │          │
-│     ├───────────────────┼────────────────┼─────────┤          │
-│     │ transform_utils   │  config_manager│         │          │
-│     │ vision_client     │  state_machine │         │          │
-│     └───────────────────┴────────────────┴─────────┘          │
-│                         │                                      │
-│     ┌───────────────────┼────────────────────────┐            │
-│     │                   │                        │            │
-│     ▼                   ▼                        ▼            │
-│  RoboDK           Vision Service            MQTT Gripper      │
-│  (robot)          (port 5555)               (broker)          │
-│                                                                │
-│  ┌──────────────────┐                                         │
-│  │ robot_pnp_remote │◄──── MQTT Topics ────────────┐         │
-│  │ (MQTT bridge)    │                               │         │
-│  └────────┬─────────┘                               │         │
-│           │                                         │         │
-│           ▼                                         │         │
-│     Supabase (optional)               Remote Clients         │
-│     (cloud logs)                                             │
-└─────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                    ROBOT PnP SYSTEM                             |
+|-----------------------------------------------------------------+
+|                                                                 |
+|  +------------------+         +------------------+            |
+|  | robot_pnp_cli    |         | robot_pnp_manager|            |
+|  | (testing tool)   |         | (local admin CLI)|            |
+|  \--------+---------+         \--------+---------+            |
+|           |                             |                       |
+|           \-------------+---------------+                       |
+|                         |                                       |
+|              +----------[DOWN]----------+                           |
+|              | robot_pnp_service   |[LEFT]----+                     |
+|              | (IPC server:5556)   |     |                     |
+|              \----------+----------+     |                     |
+|                         |                |                     |
+|              +----------[DOWN]----------+     |                     |
+|              | robot_pnp_controller|     |                     |
+|              | (core logic)        |     |                     |
+|              \----------+----------+     |                     |
+|                         |                |                     |
+|     +-------------------+----------------+---------+          |
+|     |  Shared Modules   |                |         |          |
+|     |-------------------+----------------+---------+          |
+|     | transform_utils   |  config_manager|         |          |
+|     | vision_client     |  state_machine |         |          |
+|     \-------------------+----------------+---------+          |
+|                         |                                      |
+|     +-------------------+------------------------+            |
+|     |                   |                        |            |
+|     [DOWN]                   [DOWN]                        [DOWN]            |
+|  RoboDK           Vision Service            MQTT Gripper      |
+|  (robot)          (port 5555)               (broker)          |
+|                                                                |
+|  +------------------+                                         |
+|  | robot_pnp_remote |[LEFT]---- MQTT Topics ------------+         |
+|  | (MQTT bridge)    |                               |         |
+|  \--------+---------+                               |         |
+|           |                                         |         |
+|           [DOWN]                                         |         |
+|     Supabase (optional)               Remote Clients         |
+|     (cloud logs)                                             |
+\-------------------------------------------------------------+
 ```
 
 ## Components
@@ -68,9 +68,9 @@ The robot PnP system has been refactored into a modular, service-based architect
 - Offset application in various reference frames
 
 **Key Functions:**
-- `create_transform_matrix(translation_mm, rotation_deg)` → 4×4 matrix
-- `transform_fruit_to_base(T_base_cameraTCP, T_cam_fruit)` → T_base_fruit
-- `compute_gripper_target_from_fruit(...)` → T_base_gripper
+- `create_transform_matrix(translation_mm, rotation_deg)` -> 4x4 matrix
+- `transform_fruit_to_base(T_base_cameraTCP, T_cam_fruit)` -> T_base_fruit
+- `compute_gripper_target_from_fruit(...)` -> T_base_gripper
 
 #### config_manager.py
 - YAML configuration with hot-reload capability
@@ -133,9 +133,9 @@ The robot PnP system has been refactored into a modular, service-based architect
 **Public API:**
 ```python
 controller = RobotPnPController(config, logger)
-controller.initialize() → bool
-controller.execute_pick_sequence(berry_index=0) → bool
-controller.get_status() → dict
+controller.initialize() -> bool
+controller.execute_pick_sequence(berry_index=0) -> bool
+controller.get_status() -> dict
 controller.shutdown()
 ```
 
@@ -403,22 +403,22 @@ mosquitto_pub -h 192.168.1.100 -t robot/command/execute_pick -m "0"
 ### Pick Sequence Data Flow
 ```
 1. Client (CLI/Manager/Remote)
-   ↓ IPC request: {"command": "execute_pick", "berry_index": 0}
+   | IPC request: {"command": "execute_pick", "berry_index": 0}
 2. robot_pnp_service
-   ↓ controller.execute_pick_sequence(0)
+   | controller.execute_pick_sequence(0)
 3. robot_pnp_controller
-   ↓ vision_client.request_capture()
+   | vision_client.request_capture()
 4. vision_service (port 5555)
-   ↓ capture + PnP solve
-   ↑ List[FruitDetection]
+   | capture + PnP solve
+   [UP] List[FruitDetection]
 5. robot_pnp_controller
-   ↓ Transform to base frame (TransformUtils)
-   ↓ Compute targets (prepick/pick/place)
-   ↓ Execute movement (robodk_manager)
-   ↓ Gripper control (mqtt_gripper)
-   ↑ Success/failure
+   | Transform to base frame (TransformUtils)
+   | Compute targets (prepick/pick/place)
+   | Execute movement (robodk_manager)
+   | Gripper control (mqtt_gripper)
+   [UP] Success/failure
 6. robot_pnp_service
-   ↑ IPC response: {"status": "success", "data": {...}}
+   [UP] IPC response: {"status": "success", "data": {...}}
 7. Client
    (Display result, log to Supabase if remote)
 ```
@@ -534,10 +534,10 @@ def new_command(self, param1, param2):
 ## Migration from Old System
 
 ### robot_pnp_cli.py Changes
-- ✅ Uses shared modules (transform_utils, config_manager, vision_client)
-- ✅ Removed ~170 lines of duplicate code
-- ✅ Backward compatible (same functionality)
-- ⚠️ FruitDetection objects instead of dicts (minor API change)
+- [OK] Uses shared modules (transform_utils, config_manager, vision_client)
+- [OK] Removed ~170 lines of duplicate code
+- [OK] Backward compatible (same functionality)
+- [WARNING] FruitDetection objects instead of dicts (minor API change)
 
 ### Deprecated Components
 - None (all components still functional)

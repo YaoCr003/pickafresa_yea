@@ -140,7 +140,7 @@ class FruitPoseCLI:
             print()
             print("[WARNING]  WARNING: Intrinsics still seem incorrect!")
             print(f"   fx={self.intrinsics.fx:.1f}, fy={self.intrinsics.fy:.1f}")
-            print(f"   Expected range for D435: fx/fy ≈ 600-900")
+            print(f"   Expected range for D435: fx/fy ~= 600-900")
             print(f"   This will cause incorrect pose estimation!")
             print(f"   Try: --intrinsics realsense to force SDK intrinsics")
             print()

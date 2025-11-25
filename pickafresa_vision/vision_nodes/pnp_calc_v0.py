@@ -582,24 +582,24 @@ class FruitCenterEstimator:
                 rvec, tvec, rot_mat, T = pnp_result
                 pos = tvec.ravel()
                 if debug:
-                    print(f"  → Using PnP result (6DOF pose)")
+                    print(f"  -> Using PnP result (6DOF pose)")
             else:
                 # Fallback: translation-only from bbox center depth
                 if debug:
-                    print(f"  → PnP failed, using fallback (translation-only)")
+                    print(f"  -> PnP failed, using fallback (translation-only)")
                 cx = int((x1 + x2) * 0.5)
                 cy = int((y1 + y2) * 0.5)
                 depth_m = self._depth_sampler.sample(depth_frame, (cx, cy))
                 if depth_m is None:
                     if debug:
-                        print(f"  → Fallback FAILED: no valid depth at center ({cx},{cy})")
+                        print(f"  -> Fallback FAILED: no valid depth at center ({cx},{cy})")
                     continue
                 pos = pixel_to_camera((cx, cy), depth_m, cam_mtx)
                 rvec = None
                 rot_mat = None
                 T = _T_from_pos(pos)
                 if debug:
-                    print(f"  → Fallback SUCCESS: center_depth={depth_m:.3f}m, pos={pos}")
+                    print(f"  -> Fallback SUCCESS: center_depth={depth_m:.3f}m, pos={pos}")
             
             results.append(FruitCenterResult(
                 index=idx,
@@ -1080,7 +1080,7 @@ class RealSenseStream:
             try:
                 # On macOS, reset device before each retry attempt
                 if attempt > 0:
-                    print(f"⚠ Retry attempt {attempt}/4 - resetting device...")
+                    print(f"[WARNING] Retry attempt {attempt}/4 - resetting device...")
                     self._reset_device_state(device_serial)
                     time.sleep(1.5)  # Longer delay for hardware reset
 
@@ -1094,25 +1094,25 @@ class RealSenseStream:
                 # Switch color format if resolution negotiation fails or power-state issues arise
                 if ("failed to resolve" in error_msg) or ("set power state" in error_msg) or ("bgr8" in error_msg and "format" in error_msg):
                     if color_format != rs.format.rgb8:
-                        print("⚠ Pipeline start error suggests format issue; switching to RGB8 and retrying...")
+                        print("[WARNING] Pipeline start error suggests format issue; switching to RGB8 and retrying...")
                         color_format = rs.format.rgb8
                         self._color_is_rgb = True
 
                 # Check for specific error types
                 if "already opened" in error_msg or "device is busy" in error_msg:
-                    print(f"⚠ Device busy (attempt {attempt + 1}/5) - attempting cleanup...")
+                    print(f"[WARNING] Device busy (attempt {attempt + 1}/5) - attempting cleanup...")
                     # Device is locked, try harder cleanup
                     self._force_device_cleanup(device_serial)
                     # Force recreation of pipeline next loop
                     self.pipeline = None
                     time.sleep(2.0)  # Give device time to fully release
                 elif "no device connected" in error_msg:
-                    print(f"⚠ Device not detected (attempt {attempt + 1}/5) - waiting...")
+                    print(f"[WARNING] Device not detected (attempt {attempt + 1}/5) - waiting...")
                     # Force recreation of pipeline next loop
                     self.pipeline = None
                     time.sleep(1.5)
                 else:
-                    print(f"⚠ Pipeline start failed (attempt {attempt + 1}/5): {e}")
+                    print(f"[WARNING] Pipeline start failed (attempt {attempt + 1}/5): {e}")
                     # Force recreation of pipeline next loop
                     self.pipeline = None
                     time.sleep(1.0)
@@ -1131,7 +1131,7 @@ class RealSenseStream:
                     )
             except Exception as e:
                 last_error = e
-                print(f"⚠ Unexpected error (attempt {attempt + 1}/5): {type(e).__name__}: {e}")
+                print(f"[WARNING] Unexpected error (attempt {attempt + 1}/5): {type(e).__name__}: {e}")
                 # Force recreation of pipeline next loop
                 self.pipeline = None
                 if attempt == 4:
@@ -1174,7 +1174,7 @@ class RealSenseStream:
                 self.pipeline.stop()
                 print("[OK] RealSense pipeline stopped")
             except Exception as e:
-                print(f"⚠ Error stopping pipeline: {e}")
+                print(f"[WARNING] Error stopping pipeline: {e}")
             
             # macOS-specific: Give hardware time to power down cleanly
             # This is critical to prevent device lock on next run

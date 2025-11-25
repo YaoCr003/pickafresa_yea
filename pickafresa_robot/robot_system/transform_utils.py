@@ -240,7 +240,7 @@ class TransformUtils:
         
         Args:
             current_joints_deg: Current joint positions in degrees [j0, j1, j2, j3, j4, j5]
-            joint_deltas_deg: Joint deltas in degrees [Δj0, Δj1, Δj2, Δj3, Δj4, Δj5]
+            joint_deltas_deg: Joint deltas in degrees [deltaj0, deltaj1, deltaj2, deltaj3, deltaj4, deltaj5]
         
         Returns:
             New joint positions in degrees

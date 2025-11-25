@@ -540,7 +540,7 @@ class RoboDKManager:
         
         Args:
             name: Name for the target
-            T_base_target: 4x4 transformation matrix (base → target)
+            T_base_target: 4x4 transformation matrix (base -> target)
             create_frame: Also create a reference frame for visualization
             frame_size: Size of frame axes (mm)
             color: RGB color [r, g, b] 0-255 (optional)
@@ -1143,7 +1143,7 @@ class RoboDKManager:
         # In autonomous mode with simulation, auto-abort
         # In real_robot mode, NEVER allow force move
         print("\n" + "="*60)
-        print("⚠️  COLLISION WARNING - MOVEMENT CANNOT BE COMPLETED SAFELY")
+        print("[WARNING] COLLISION WARNING - MOVEMENT CANNOT BE COMPLETED SAFELY")
         print("="*60)
         print(f"Target: {target_name}")
         print(f"Mode: {run_mode} | Robot: {simulation_mode}")
@@ -1151,7 +1151,7 @@ class RoboDKManager:
         
         if is_real_robot:
             # REAL ROBOT: Absolute safety - no force option
-            print("❌ REAL ROBOT MODE - Movement automatically ABORTED for safety")
+            print("[ERROR] REAL ROBOT MODE - Movement automatically ABORTED for safety")
             print("   Collision detected with physical robot")
             print("   Manual intervention or RoboDK station adjustment required")
             self._log_error("Real robot mode: Auto-abort due to collision (safety protocol)")
@@ -1159,7 +1159,7 @@ class RoboDKManager:
         
         elif is_autonomous:
             # AUTONOMOUS + SIMULATION: Auto-abort but inform user
-            print("🤖 AUTONOMOUS MODE - Movement automatically ABORTED")
+            print("[ROBOT] AUTONOMOUS MODE - Movement automatically ABORTED")
             print("   Collision detected in simulation")
             print("   System will skip this operation and continue if possible")
             self._log_warn("Autonomous mode: Auto-abort due to collision")
@@ -1177,7 +1177,7 @@ class RoboDKManager:
             
             if response == "2":
                 # Only allow force in simulation mode
-                self._log_warn("⚠️  USER OVERRIDE: Forcing movement despite collision risk")
+                self._log_warn("[WARNING] USER OVERRIDE: Forcing movement despite collision risk")
                 self._log_warn("   This should ONLY be used in simulation for testing!")
                 confirm_force = input("Type 'FORCE' to confirm dangerous override: ").strip()
                 

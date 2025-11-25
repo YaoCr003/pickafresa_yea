@@ -20,31 +20,31 @@ This tool provides a comprehensive testing environment for the strawberry pickin
 ## Features
 
 ### Modes & Configuration
-- ✅ **Configuration**: YAML file or interactive prompts
-- ✅ **Run modes**: Simulation or real robot
-- ✅ **MQTT**: Optional gripper control with state confirmation
-- ✅ **Data sources**: Live camera API or pre-saved JSON files
-- ✅ **Speed profiles**: Turtle, Slow, Normal, or Custom
-- ✅ **Multi-berry**: Process multiple fruits in sequence
+- [OK] **Configuration**: YAML file or interactive prompts
+- [OK] **Run modes**: Simulation or real robot
+- [OK] **MQTT**: Optional gripper control with state confirmation
+- [OK] **Data sources**: Live camera API or pre-saved JSON files
+- [OK] **Speed profiles**: Turtle, Slow, Normal, or Custom
+- [OK] **Multi-berry**: Process multiple fruits in sequence
 
 ### Safety Features
-- ✅ User confirmation before each movement
-- ✅ User confirmation before gripper actions
-- ✅ Override capability for MQTT state waiting (press 'c')
-- ✅ Emergency stop (ESC key)
-- ✅ Collision checking (RoboDK feature)
+- [OK] User confirmation before each movement
+- [OK] User confirmation before gripper actions
+- [OK] Override capability for MQTT state waiting (press 'c')
+- [OK] Emergency stop (ESC key)
+- [OK] Collision checking (RoboDK feature)
 
 ### Visualization
-- ✅ Auto-discover targets from RoboDK station
-- ✅ Create reference frames for fruit positions
-- ✅ Highlight targets before movement
-- ✅ Color-coded frames (green=prepick, red=pick)
+- [OK] Auto-discover targets from RoboDK station
+- [OK] Create reference frames for fruit positions
+- [OK] Highlight targets before movement
+- [OK] Color-coded frames (green=prepick, red=pick)
 
 ### Logging
-- ✅ ROS2-style format: `[timestamp] [level] [node]: message`
-- ✅ Console and file logging
-- ✅ Configurable log levels
-- ✅ Timestamped log files
+- [OK] ROS2-style format: `[timestamp] [level] [node]: message`
+- [OK] Console and file logging
+- [OK] Configurable log levels
+- [OK] Timestamped log files
 
 ---
 
@@ -75,21 +75,21 @@ cd pickafresa_yea
 Ensure the following structure exists:
 ```
 pickafresa_yea/
-├── pickafresa_robot/
-│   ├── configs/
-│   │   └── robot_pnp_config.yaml
-│   ├── logs/
-│   ├── rdk/
-│   │   └── SETUP Fresas.rdk
-│   └── robot_testing/
-│       ├── robot_pnp_cli.py       # Main CLI
-│       ├── ros2_logger.py          # Logger module
-│       ├── mqtt_gripper.py         # MQTT controller
-│       ├── pnp_handler.py          # PnP data handler
-│       └── robodk_manager.py       # RoboDK integration
-└── pickafresa_vision/
-    ├── captures/                   # JSON files
-    └── configs/                    # Vision configs
+|-- pickafresa_robot/
+|   |-- configs/
+|   |   \-- robot_pnp_config.yaml
+|   |-- logs/
+|   |-- rdk/
+|   |   \-- SETUP Fresas.rdk
+|   \-- robot_testing/
+|       |-- robot_pnp_cli.py       # Main CLI
+|       |-- ros2_logger.py          # Logger module
+|       |-- mqtt_gripper.py         # MQTT controller
+|       |-- pnp_handler.py          # PnP data handler
+|       \-- robodk_manager.py       # RoboDK integration
+\-- pickafresa_vision/
+    |-- captures/                   # JSON files
+    \-- configs/                    # Vision configs
 ```
 
 ---
@@ -128,7 +128,7 @@ CONFIGURATION SETUP
 ----------------------------------------------------------------------
 
 Use configuration from 'robot_pnp_config.yaml'? [Y/n]: y
-✓ Configuration loaded from: pickafresa_robot/configs/robot_pnp_config.yaml
+[OK] Configuration loaded from: pickafresa_robot/configs/robot_pnp_config.yaml
 
 [2025-11-05 14:32:10.123] [INFO] [robot_pnp_cli]: ==================================================
 [2025-11-05 14:32:10.124] [INFO] [robot_pnp_cli]: Robot PnP Testing Tool Started
@@ -136,15 +136,15 @@ Use configuration from 'robot_pnp_config.yaml'? [Y/n]: y
 
 [2025-11-05 14:32:10.200] [INFO] [robot_pnp_cli]: Initializing components...
 [2025-11-05 14:32:10.201] [INFO] [robot_pnp_cli]: Initializing RoboDK (mode: simulate)...
-[2025-11-05 14:32:11.050] [INFO] [robot_pnp_cli]: ✓ Connected to RoboDK
-[2025-11-05 14:32:11.100] [INFO] [robot_pnp_cli]: ✓ Robot selected: UR3e
-[2025-11-05 14:32:11.150] [INFO] [robot_pnp_cli]: ✓ Discovered 5 targets: ['Home', 'Foto', ...]
+[2025-11-05 14:32:11.050] [INFO] [robot_pnp_cli]: [OK] Connected to RoboDK
+[2025-11-05 14:32:11.100] [INFO] [robot_pnp_cli]: [OK] Robot selected: UR3e
+[2025-11-05 14:32:11.150] [INFO] [robot_pnp_cli]: [OK] Discovered 5 targets: ['Home', 'Foto', ...]
 
 ...
 
-[2025-11-05 14:32:45.678] [INFO] [robot_pnp_cli]: ✓ Completed pick-and-place cycle for fruit #1
+[2025-11-05 14:32:45.678] [INFO] [robot_pnp_cli]: [OK] Completed pick-and-place cycle for fruit #1
 [2025-11-05 14:32:45.680] [INFO] [robot_pnp_cli]: ==================================================
-[2025-11-05 14:32:45.681] [INFO] [robot_pnp_cli]: ✓ All operations completed successfully
+[2025-11-05 14:32:45.681] [INFO] [robot_pnp_cli]: [OK] All operations completed successfully
 [2025-11-05 14:32:45.682] [INFO] [robot_pnp_cli]: ==================================================
 ```
 
@@ -225,16 +225,16 @@ safety:
 The tool executes the following sequence:
 
 ```
-1. HOME         → Move to home position (joint movement)
-2. FOTO         → Move to camera position (joint movement)
-3. CAPTURE      → Capture PnP data or load from JSON
-4. PREPICK      → Move to approach position (joint movement)
-5. PICK         → Approach fruit (linear movement)
-6. GRIPPER ON   → Close gripper, wait for confirmation
-7. PREPICK      → Retract to approach position (linear movement)
-8. PLACE/HOME   → Move to place position (joint movement)
-9. GRIPPER OFF  → Open gripper, wait for confirmation
-10. HOME        → Return to home position
+1. HOME         -> Move to home position (joint movement)
+2. FOTO         -> Move to camera position (joint movement)
+3. CAPTURE      -> Capture PnP data or load from JSON
+4. PREPICK      -> Move to approach position (joint movement)
+5. PICK         -> Approach fruit (linear movement)
+6. GRIPPER ON   -> Close gripper, wait for confirmation
+7. PREPICK      -> Retract to approach position (linear movement)
+8. PLACE/HOME   -> Move to place position (joint movement)
+9. GRIPPER OFF  -> Open gripper, wait for confirmation
+10. HOME        -> Return to home position
 ```
 
 ### Harvesting Approach (Prepick Position)
@@ -260,10 +260,10 @@ pick_offset:
 ```
 
 Each step includes:
-- ✅ User confirmation prompt (if enabled)
-- ✅ Target highlighting in RoboDK
-- ✅ Logging of action and status
-- ✅ Emergency stop check
+- [OK] User confirmation prompt (if enabled)
+- [OK] Target highlighting in RoboDK
+- [OK] Logging of action and status
+- [OK] Emergency stop check
 
 ---
 
@@ -272,7 +272,7 @@ Each step includes:
 The tool handles the following transform chain:
 
 ```
-Camera Frame → TCP Frame → Robot Base Frame
+Camera Frame -> TCP Frame -> Robot Base Frame
 ```
 
 ### Camera-to-TCP Transform

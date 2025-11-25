@@ -43,12 +43,12 @@ def send_command(command: dict, host: str = "localhost", port: int = 5556) -> di
             return json.loads(response_data.decode('utf-8'))
     
     except ConnectionRefusedError:
-        print(f"❌ Could not connect to service at {host}:{port}")
+        print(f"[ERROR] Could not connect to service at {host}:{port}")
         print("   Is robot_pnp_service.py running?")
         return {'status': 'error', 'error': 'Connection refused'}
     
     except Exception as e:
-        print(f"❌ Communication error: {e}")
+        print(f"[ERROR] Communication error: {e}")
         return {'status': 'error', 'error': str(e)}
 
 
@@ -68,11 +68,11 @@ def main():
     status = send_command({'command': 'status'}, args.host, args.port)
     
     if status.get('status') != 'success':
-        print("❌ Service not ready")
+        print("[ERROR] Service not ready")
         print(f"   Response: {status}")
         return 1
     
-    print(f"✓ Service ready (state: {status['data']['state']})")
+    print(f"[OK] Service ready (state: {status['data']['state']})")
     
     # Initialize if needed
     if not status['data']['initialized']:
@@ -80,11 +80,11 @@ def main():
         init_resp = send_command({'command': 'initialize'}, args.host, args.port)
         
         if init_resp.get('status') != 'success':
-            print("❌ Initialization failed")
+            print("[ERROR] Initialization failed")
             print(f"   Response: {init_resp}")
             return 1
         
-        print("✓ Controller initialized")
+        print("[OK] Controller initialized")
     else:
         print("\n2. Controller already initialized")
     
@@ -95,7 +95,7 @@ def main():
     if args.json:
         json_path = Path(args.json).resolve()
         if not json_path.exists():
-            print(f"❌ JSON file not found: {json_path}")
+            print(f"[ERROR] JSON file not found: {json_path}")
             return 1
         print(f"   JSON: {json_path}")
     
@@ -116,10 +116,10 @@ def main():
     print("=" * 60)
     
     if response.get('status') == 'success':
-        print("✓ Multi-berry sequence COMPLETED")
+        print("[OK] Multi-berry sequence COMPLETED")
         print(f"   Completed: {response['data']['completed']}")
     else:
-        print("❌ Multi-berry sequence FAILED")
+        print("[ERROR] Multi-berry sequence FAILED")
         print(f"   Error: {response.get('error', 'Unknown error')}")
         return 1
     

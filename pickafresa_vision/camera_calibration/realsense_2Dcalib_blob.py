@@ -380,7 +380,7 @@ class CameraCalibration:
             print("  [WARNING] Warning: High reprojection error (>1.0 pixel)")
             print("  Consider recalibrating with better images.\n")
         elif mean_error > 0.5:
-            print("  ℹ Note: Moderate reprojection error")
+            print("  [INFO] Note: Moderate reprojection error")
             print("  Calibration is acceptable but could be improved.\n")
         else:
             print("  [OK] Excellent calibration quality!\n")

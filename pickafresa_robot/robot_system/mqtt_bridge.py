@@ -171,7 +171,7 @@ class MQTTBridge:
                 time.sleep(0.1)
             
             if self.connected:
-                self._log_info("✓ MQTT bridge started")
+                self._log_info("[OK] MQTT bridge started")
                 return True
             else:
                 self._log_warning("MQTT connection timeout")
@@ -195,7 +195,7 @@ class MQTTBridge:
                 self.client.disconnect()
             
             self.connected = False
-            self._log_info("✓ MQTT bridge stopped")
+            self._log_info("[OK] MQTT bridge stopped")
         
         except Exception as e:
             self._log_error(f"Error stopping MQTT bridge: {e}")
@@ -339,7 +339,7 @@ class MQTTBridge:
         """MQTT connection callback."""
         if rc == 0:
             self.connected = True
-            self._log_info("✓ Connected to MQTT broker")
+            self._log_info("[OK] Connected to MQTT broker")
             self._log_debug(f"MQTT connection established with broker {self.broker_host}:{self.broker_port}")
             
             # Subscribe to command topic

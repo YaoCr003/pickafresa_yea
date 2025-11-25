@@ -98,12 +98,12 @@ class RobotPnPService:
     
     def _on_config_reload(self, new_config: Dict[str, Any]):
         """Called when config is reloaded."""
-        self.logger.info("⟳ Configuration reloaded")
+        self.logger.info("[REFRESH] Configuration reloaded")
         
         # Update controller config if it exists
         if self.controller:
             # Controller already has reference to self.config which was updated
-            self.logger.info("✓ Controller config updated")
+            self.logger.info("[OK] Controller config updated")
     
     def start(self) -> bool:
         """
@@ -149,7 +149,7 @@ class RobotPnPService:
             self.server_socket.settimeout(1.0)  # For graceful shutdown
             
             self.running = True
-            self.logger.info(f"✓ Service started on {self.host}:{self.port}")
+            self.logger.info(f"[OK] Service started on {self.host}:{self.port}")
             
             # Setup signal handlers
             signal.signal(signal.SIGINT, self._signal_handler)
@@ -419,7 +419,7 @@ class RobotPnPService:
             success = self.controller.execute_multi_berry_sequence(json_path=json_path)
             
             if success:
-                self.logger.info("✓ Multi-berry sequence completed")
+                self.logger.info("[OK] Multi-berry sequence completed")
             else:
                 self.logger.error("Multi-berry sequence failed")
             
@@ -499,7 +499,7 @@ class RobotPnPService:
         if self.controller:
             self.controller.shutdown()
         
-        self.logger.info("✓ Service stopped")
+        self.logger.info("[OK] Service stopped")
 
 
 # Command-line entry point
@@ -523,7 +523,7 @@ if __name__ == "__main__":
         config_path = REPO_ROOT / config_path
     
     if not config_path.exists():
-        print(f"✗ Config file not found: {config_path}")
+        print(f"[FAIL] Config file not found: {config_path}")
         sys.exit(1)
     
     # Create and start service
@@ -534,7 +534,7 @@ if __name__ == "__main__":
     )
     
     if service.start():
-        print("\n✓ Service running. Press Ctrl+C to stop.\n")
+        print("\n[OK] Service running. Press Ctrl+C to stop.\n")
     else:
-        print("\n✗ Service failed to start\n")
+        print("\n[FAIL] Service failed to start\n")
         sys.exit(1)

@@ -160,7 +160,7 @@ def get_sensor_info(sensor) -> Dict[str, Any]:
     return info
 
 
-# Extended list of (width, height, fps) to try. Ordered high→low bandwidth.
+# Extended list of (width, height, fps) to try. Ordered high->low bandwidth.
 # More aggressive than depth profiles since color streams have higher bandwidth tolerance.
 DEFAULT_COLOR_PROFILES = [
     # Ultra high resolution - 16:9

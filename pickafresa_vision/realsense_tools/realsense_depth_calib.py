@@ -113,7 +113,7 @@ def mouse_callback(event, x, y, flags, param):
         if dist:
             clicked_point = (x, y)
             current_depth = dist
-            show_text = f"Point ({x},{y}) = {dist:.3f} m → write actual distance"
+            show_text = f"Point ({x},{y}) = {dist:.3f} m -> write actual distance"
         else:
             show_text = "Valid distance could not be obtained."
 

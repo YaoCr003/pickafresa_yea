@@ -75,7 +75,7 @@ class ServiceTestClient:
         response = self.send_command('status')
         
         if response['status'] == 'success':
-            print("✓ Status command successful")
+            print("[OK] Status command successful")
             service_info = response['data']['service']
             controller_info = response['data']['controller']
             stats = response['data']['stats']
@@ -87,7 +87,7 @@ class ServiceTestClient:
             print(f"  Requests: {stats['requests_total']} (success: {stats['requests_success']}, failed: {stats['requests_failed']})")
             return True
         else:
-            print(f"✗ Status command failed: {response.get('error')}")
+            print(f"[FAIL] Status command failed: {response.get('error')}")
             return False
     
     def test_initialize(self):
@@ -96,11 +96,11 @@ class ServiceTestClient:
         response = self.send_command('initialize')
         
         if response['status'] == 'success':
-            print("✓ Initialize command successful")
+            print("[OK] Initialize command successful")
             print(f"  Initialized: {response['data']['initialized']}")
             return True
         else:
-            print(f"✗ Initialize command failed: {response.get('error')}")
+            print(f"[FAIL] Initialize command failed: {response.get('error')}")
             return False
     
     def test_stats(self):
@@ -109,7 +109,7 @@ class ServiceTestClient:
         response = self.send_command('stats')
         
         if response['status'] == 'success':
-            print("✓ Stats command successful")
+            print("[OK] Stats command successful")
             stats = response['data']
             print(f"  Total requests: {stats['requests_total']}")
             print(f"  Success: {stats['requests_success']}")
@@ -119,7 +119,7 @@ class ServiceTestClient:
             print(f"  Pick failed: {stats['picks_failed']}")
             return True
         else:
-            print(f"✗ Stats command failed: {response.get('error')}")
+            print(f"[FAIL] Stats command failed: {response.get('error')}")
             return False
     
     def test_reload_config(self):
@@ -128,11 +128,11 @@ class ServiceTestClient:
         response = self.send_command('reload_config')
         
         if response['status'] == 'success':
-            print("✓ Reload config command successful")
+            print("[OK] Reload config command successful")
             print(f"  Message: {response['data']['message']}")
             return True
         else:
-            print(f"✗ Reload config command failed: {response.get('error')}")
+            print(f"[FAIL] Reload config command failed: {response.get('error')}")
             return False
     
     def test_execute_pick(self, berry_index: int = 0):
@@ -143,12 +143,12 @@ class ServiceTestClient:
         response = self.send_command('execute_pick', berry_index=berry_index)
         
         if response['status'] == 'success':
-            print("✓ Execute pick command successful")
+            print("[OK] Execute pick command successful")
             print(f"  Berry index: {response['data']['berry_index']}")
             print(f"  Completed: {response['data']['completed']}")
             return True
         else:
-            print(f"✗ Execute pick command failed: {response.get('error')}")
+            print(f"[FAIL] Execute pick command failed: {response.get('error')}")
             return False
     
     def test_unknown_command(self):
@@ -157,11 +157,11 @@ class ServiceTestClient:
         response = self.send_command('invalid_command_xyz')
         
         if response['status'] == 'error':
-            print("✓ Unknown command correctly rejected")
+            print("[OK] Unknown command correctly rejected")
             print(f"  Error: {response.get('error')}")
             return True
         else:
-            print("✗ Unknown command should have returned error")
+            print("[FAIL] Unknown command should have returned error")
             return False
 
 
@@ -208,15 +208,15 @@ def main():
     total = len(results)
     
     for test_name, result in results:
-        status = "✓ PASS" if result else "✗ FAIL"
+        status = "[OK] PASS" if result else "[FAIL] FAIL"
         print(f"  {status}: {test_name}")
     
     print(f"\nTotal: {passed}/{total} tests passed")
     
     if passed == total:
-        print("\n✅ ALL TESTS PASSED")
+        print("\n[SUCCESS] ALL TESTS PASSED")
     else:
-        print(f"\n⚠️  {total - passed} test(s) failed")
+        print(f"\n[WARNING] {total - passed} test(s) failed")
 
 
 if __name__ == "__main__":

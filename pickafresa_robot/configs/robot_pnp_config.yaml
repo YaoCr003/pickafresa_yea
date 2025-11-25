@@ -185,10 +185,10 @@ post_pick:
   
   # Rotation mode: "absolute" or "cumulative"
   # - "absolute": Rotations specified in BASE frame axes, composed with current orientation
-  #               (e.g., [-70, 0, 0] = 70° rotation around base X-axis, applied to current pose)
+  #               (e.g., [-70, 0, 0] = 70deg rotation around base X-axis, applied to current pose)
   #               First target rotates from pick orientation, subsequent ones build on that
   # - "cumulative": Rotations in LOCAL frame axes (current gripper orientation)
-  #               (e.g., [-70, 0, 0] = 70° twist around gripper's current forward axis)
+  #               (e.g., [-70, 0, 0] = 70deg twist around gripper's current forward axis)
   rotation_mode: "cumulative"
   
   # Post-pick target configurations (cumulative offsets from pick position)
@@ -203,10 +203,10 @@ post_pick:
   # - Offsets are in berry/fruit coordinate frame (or current frame if rotation_mode="cumulative")
   # - Rotations use axis-angle representation [u, v, w] in degrees via Rodrigues formula
   # - In "absolute" mode: Rotation axes are BASE FRAME (UR3e base)
-  #   - rotation_deg: [-70, 0, 0] means 70° rotation around base X-axis
+  #   - rotation_deg: [-70, 0, 0] means 70deg rotation around base X-axis
   #   - Applied ON TOP of current orientation (builds up from pick)
   # - In "cumulative" mode: Rotation axes are CURRENT GRIPPER FRAME  
-  #   - rotation_deg: [-70, 0, 0] means 70° twist around gripper's forward direction
+  #   - rotation_deg: [-70, 0, 0] means 70deg twist around gripper's forward direction
   #   - Each rotation happens in the new orientation from previous step
   #
   # MODE 2: JOINT SPACE CONTROL (NEW - for precise singularity-free maneuvers)
@@ -220,32 +220,32 @@ post_pick:
   #   * j4 = wrist 2
   #   * j5 = wrist 3 / tool flange (j6 in RoboDK notation)
   # - Cumulative: Each target's deltas are relative to the previous joint configuration
-  # - Example: [0, 5.0, -3.0, 0, 0, 2.0] moves j1 by +5°, j2 by -3°, j5 by +2°
+  # - Example: [0, 5.0, -3.0, 0, 0, 2.0] moves j1 by +5deg, j2 by -3deg, j5 by +2deg
   # - Useful for: avoiding singularities, precise local maneuvers, small adjustments
   # - When joint_deltas_deg is present, offset_mm and rotation_deg are IGNORED
-  # - CRITICAL: Use move_type: "joint" for multi-revolution rotations (>360°)
+  # - CRITICAL: Use move_type: "joint" for multi-revolution rotations (>360deg)
   #   * Linear moves use Cartesian interpolation and cannot do multi-revolution!
   # - Joint Limits: Ensure RoboDK joint limits allow the cumulative angles
-  #   * Default UR limits: ±360° per joint
-  #   * For multi-revolution: Update to ±2160° (allows 6 full rotations)
+  #   * Default UR limits: +/-360deg per joint
+  #   * For multi-revolution: Update to +/-2160deg (allows 6 full rotations)
   #
   # Target selection: If joint_deltas_deg exists, use joint control; else use Cartesian
   targets:
     - name: "post_pick_realign"
       offset_mm: [10.0, 0.0, 00.0]      # 60mm back toward camera (detach motion) - CORRECTED: Z- = toward camera
-      rotation_deg: [10, 0.0, 0.0]      # Rotate 10° about X-axis (twist for detachment)
+      rotation_deg: [10, 0.0, 0.0]      # Rotate 10deg about X-axis (twist for detachment)
       move_type: "linear"                # Movement type: "linear" or "joint"
       # joint_deltas_deg: [0, 3.0, -2.0, 0, 0, 1.0]  # OPTIONAL: uncomment for joint control
     
     - name: "post_pick_detach"
       #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
-      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15° about X-axis (partial reset)
+      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15deg about X-axis (partial reset)
       move_type: "joint"                 # Movement type: "linear" or "joint" - MUST use "joint" for multi-revolution
       joint_deltas_deg: [0, 0, -20, 0, 0, 360]  # Joint control: 3.5 full rotations on j6 (tool flange)
 
     - name: "post_pick_reset"
       #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
-      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15° about X-axis (partial reset)
+      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15deg about X-axis (partial reset)
       move_type: "joint"                 # Movement type: "linear" or "joint" - MUST use "joint" for multi-revolution
       joint_deltas_deg: [0, 0, 0, 0, 0, -360]  # Joint control: unwind 3 rotations on j6 (tool flange)
 
@@ -279,7 +279,7 @@ post_pick:
   # targets:
   #   - name: "post_pick_detach"
   #     offset_mm: [0.0, 0.0, -20.0]      # Cartesian: pull back 20mm
-  #     rotation_deg: [-45, 0.0, 0.0]     # Cartesian: twist 45°
+  #     rotation_deg: [-45, 0.0, 0.0]     # Cartesian: twist 45deg
   #     move_type: "linear"
     
   #   - name: "post_pick_adjust"
@@ -395,8 +395,8 @@ collision_avoidance:
 # ==============================================================================
 multi_berry:
   # NOTE: mode is auto-linked to run_mode
-  # - run_mode "manual_confirm" → mode "semi_auto"
-  # - run_mode "autonomous" → mode "full_auto"
+  # - run_mode "manual_confirm" -> mode "semi_auto"
+  # - run_mode "autonomous" -> mode "full_auto"
   # You can override this by explicitly setting mode in code, but default behavior links them
   mode: "full_auto"                   # Options: "semi_auto" (with confirmations), "full_auto" (no confirmations)
   max_berries_per_run: 100            # Maximum number of berries to pick in one run (across all capture cycles)

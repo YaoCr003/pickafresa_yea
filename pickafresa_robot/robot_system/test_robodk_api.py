@@ -13,9 +13,9 @@ sys.path.insert(0, str(REPO_ROOT))
 try:
     from robolink import Robolink, RUNMODE_SIMULATE
     from robodk import robomath
-    print("✓ RoboDK API imported successfully")
+    print("[OK] RoboDK API imported successfully")
 except ImportError as e:
-    print(f"✗ Failed to import RoboDK API: {e}")
+    print(f"[FAIL] Failed to import RoboDK API: {e}")
     sys.exit(1)
 
 def test_robodk_api():
@@ -27,7 +27,7 @@ def test_robodk_api():
     try:
         # Connect to RoboDK
         RDK = Robolink()
-        print("✓ Connected to RoboDK")
+        print("[OK] Connected to RoboDK")
         
         # Check for test methods
         test_methods = [
@@ -44,10 +44,10 @@ def test_robodk_api():
         # Get first robot
         robot = RDK.ItemUserPick('Select a robot', filter=2)  # 2 = ITEM_TYPE_ROBOT
         if not robot.Valid():
-            print("✗ No robot selected")
+            print("[FAIL] No robot selected")
             return
         
-        print(f"✓ Robot selected: {robot.Name()}")
+        print(f"[OK] Robot selected: {robot.Name()}")
         
         # Check which methods are available
         print("\nAPI Method Availability:")
@@ -56,7 +56,7 @@ def test_robodk_api():
         for method in test_methods:
             has_method = hasattr(robot, method) if method not in ['Collisions', 'setCollisionActive', 'getCollisionItems'] else hasattr(RDK, method)
             object_name = "robot" if method not in ['Collisions', 'setCollisionActive', 'getCollisionItems'] else "RDK"
-            status = "✓" if has_method else "✗"
+            status = "[OK]" if has_method else "[FAIL]"
             print(f"{status} {object_name}.{method}()")
         
         # Test elbow configuration detection
@@ -78,7 +78,7 @@ def test_robodk_api():
             try:
                 all_solutions = robot.SolveIK_All(current_pose)
                 if all_solutions:
-                    print(f"✓ SolveIK_All() returned {len(all_solutions)} configurations")
+                    print(f"[OK] SolveIK_All() returned {len(all_solutions)} configurations")
                     
                     # Check elbow configurations
                     elbow_up_count = 0
@@ -92,30 +92,30 @@ def test_robodk_api():
                     print(f"  - Elbow-up configurations: {elbow_up_count}")
                     print(f"  - Elbow-down configurations: {elbow_down_count}")
                 else:
-                    print("✗ SolveIK_All() returned no solutions")
+                    print("[FAIL] SolveIK_All() returned no solutions")
             except Exception as e:
-                print(f"✗ SolveIK_All() test failed: {e}")
+                print(f"[FAIL] SolveIK_All() test failed: {e}")
         
         # Test collision checking
         print("\nTesting collision checking:")
         print("-" * 60)
         try:
             RDK.setCollisionActive(1)
-            print("✓ Collision checking enabled")
+            print("[OK] Collision checking enabled")
             
             collision_count = RDK.Collisions()
-            print(f"✓ Current collision count: {collision_count}")
+            print(f"[OK] Current collision count: {collision_count}")
             
             if hasattr(RDK, 'getCollisionItems'):
                 try:
                     items = RDK.getCollisionItems()
-                    print(f"✓ getCollisionItems() available (returned {len(items) if items else 0} items)")
+                    print(f"[OK] getCollisionItems() available (returned {len(items) if items else 0} items)")
                 except:
-                    print("✗ getCollisionItems() available but returned error")
+                    print("[FAIL] getCollisionItems() available but returned error")
             else:
-                print("✗ getCollisionItems() not available (will use fallback)")
+                print("[FAIL] getCollisionItems() not available (will use fallback)")
         except Exception as e:
-            print(f"✗ Collision checking test failed: {e}")
+            print(f"[FAIL] Collision checking test failed: {e}")
         
         # Test movement test methods
         if hasattr(robot, 'MoveJ_Test'):
@@ -127,17 +127,17 @@ def test_robodk_api():
                 temp_target.setPose(robot.Pose())
                 result = robot.MoveJ_Test(temp_target)
                 temp_target.Delete()
-                print(f"✓ MoveJ_Test() available (result: {result})")
+                print(f"[OK] MoveJ_Test() available (result: {result})")
                 print(f"  (0 = OK, negative = collision/error)")
             except Exception as e:
-                print(f"✗ MoveJ_Test() test failed: {e}")
+                print(f"[FAIL] MoveJ_Test() test failed: {e}")
         
         print("\n" + "="*60)
         print("API Test Complete")
         print("="*60)
         
     except Exception as e:
-        print(f"\n✗ Test failed with error: {e}")
+        print(f"\n[FAIL] Test failed with error: {e}")
         import traceback
         traceback.print_exc()
 

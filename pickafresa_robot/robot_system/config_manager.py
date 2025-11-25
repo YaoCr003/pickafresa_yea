@@ -478,7 +478,7 @@ if __name__ == "__main__":
         test_keys = ['run_mode', 'robodk', 'transforms.pick_offset', 'transforms', 'post_pick']
         for key in test_keys:
             hot = manager.is_hot_reloadable(key)
-            print(f"  {key}: {'✓ HOT' if hot else '✗ COLD (requires restart)'}")
+            print(f"  {key}: {'[OK] HOT' if hot else '[FAIL] COLD (requires restart)'}")
     
     print("\n" + "=" * 70)
     print("All tests completed!")

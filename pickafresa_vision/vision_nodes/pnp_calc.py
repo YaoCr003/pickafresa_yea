@@ -10,7 +10,7 @@ Key Pipeline:
 3. Sample depth at bbox using configurable strategy (closest/center/offset variants)
 4. Validate depth consistency across corners
 5. Solve PnP using known strawberry dimensions and bbox corners
-6. Return 4x4 homogeneous transformation matrix (Camera → Fruit frame)
+6. Return 4x4 homogeneous transformation matrix (Camera -> Fruit frame)
 
 Features:
 - Multi-detection processing (sorted by confidence)
@@ -18,8 +18,8 @@ Features:
 - Configurable depth output strategies:
   * "closest": Minimum depth from ROI (finds fruit surface)
   * "center": Depth at ROI center
-  * "closest_offset": Minimum depth + 0.5× strawberry width (deeper)
-  * "center_offset": Center depth + 0.4× strawberry width (deeper)
+  * "closest_offset": Minimum depth + 0.5x strawberry width (deeper)
+  * "center_offset": Center depth + 0.4x strawberry width (deeper)
 - Adaptive depth variance thresholds based on distance
 - Comprehensive error reporting with failure reasons
 - JSON-serializable results for data logging
@@ -106,7 +106,7 @@ class PoseEstimationResult:
         class_name: Detected class label
         class_id: Numeric class ID
         success: Whether PnP estimation succeeded
-        T_cam_fruit: 4x4 homogeneous transformation matrix (Camera → Fruit frame)
+        T_cam_fruit: 4x4 homogeneous transformation matrix (Camera -> Fruit frame)
         position_cam: 3D position in camera frame [x, y, z] meters (from T_cam_fruit)
         rotation_matrix: 3x3 rotation matrix (from T_cam_fruit)
         rvec: Rotation vector from PnP solver (3,)
@@ -322,7 +322,7 @@ class FruitPoseEstimator:
         camera_pitch_deg = self.config.get("camera_mounting", {}).get("pitch_deg", 0.0)
         
         if abs(camera_pitch_deg) > 0.01:  # Only apply if non-zero
-            logger.debug(f"Applying camera mounting pitch compensation: {camera_pitch_deg}°")
+            logger.debug(f"Applying camera mounting pitch compensation: {camera_pitch_deg}deg")
             
             # Rotation around X-axis (pitch)
             # Positive pitch = camera tilted down (looking downward)
@@ -385,7 +385,7 @@ class FruitPoseEstimator:
         camera_pitch_deg = self.config.get("camera_mounting", {}).get("pitch_deg", 0.0)
         
         if abs(camera_pitch_deg) > 0.01:  # Only apply if non-zero
-            logger.debug(f"Applying camera mounting pitch compensation to 8-point model: {camera_pitch_deg}°")
+            logger.debug(f"Applying camera mounting pitch compensation to 8-point model: {camera_pitch_deg}deg")
             
             pitch_rad = np.deg2rad(camera_pitch_deg)
             R_x = np.array([
@@ -765,8 +765,8 @@ class FruitPoseEstimator:
         Primary strategies (configurable via output_strategy in config):
         - "closest": Minimum depth across full bbox (finds fruit surface, ignores background)
         - "center": Depth at bbox center point
-        - "closest_offset": Minimum depth + 0.5× strawberry width (pushes deeper into fruit)
-        - "center_offset": Center depth + 0.4× strawberry width (deeper from center)
+        - "closest_offset": Minimum depth + 0.5x strawberry width (pushes deeper into fruit)
+        - "center_offset": Center depth + 0.4x strawberry width (deeper from center)
         
         Fallback strategies (if primary fails):
         1. Inset sampling: Sample 15% inside from corners
@@ -1180,7 +1180,7 @@ class FruitPoseEstimator:
             if enforce_depth_constraint and measured_depth is not None:
                 original_z = tvec[2, 0]
                 tvec[2, 0] = measured_depth
-                logger.debug(f"Enforced depth constraint: Z {original_z:.4f}m → {measured_depth:.4f}m (Δ={abs(original_z - measured_depth)*1000:.1f}mm)")
+                logger.debug(f"Enforced depth constraint: Z {original_z:.4f}m -> {measured_depth:.4f}m (delta={abs(original_z - measured_depth)*1000:.1f}mm)")
             
             logger.debug(f"PnP converged - tvec: {tvec.flatten()}, rvec: {rvec.flatten()}")
             return rvec, tvec, None
@@ -1341,7 +1341,7 @@ class FruitPoseEstimator:
             original_z = position_cam[2]
             T_cam_fruit[2, 3] += depth_offset
             position_cam = T_cam_fruit[:3, 3]
-            logger.info(f"[Offset Applied] Z: {original_z:.4f}m → {position_cam[2]:.4f}m (+{depth_offset*1000:.1f}mm)")
+            logger.info(f"[Offset Applied] Z: {original_z:.4f}m -> {position_cam[2]:.4f}m (+{depth_offset*1000:.1f}mm)")
             logger.info(f"[OK] Final pose for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")
         else:
             logger.info(f"[OK] Pose estimated for {class_name} - Position: X={position_cam[0]:.4f}, Y={position_cam[1]:.4f}, Z={position_cam[2]:.4f}")

@@ -36,7 +36,7 @@ if str(REPO_ROOT) not in sys.path:
 try:
     import paho.mqtt.client as mqtt
 except ImportError:
-    print("✗ paho-mqtt not installed. Install: pip install paho-mqtt")
+    print("[FAIL] paho-mqtt not installed. Install: pip install paho-mqtt")
     sys.exit(1)
 
 # Optional: Supabase for cloud logging
@@ -45,7 +45,7 @@ try:
     from supabase import create_client, Client
     SUPABASE_AVAILABLE = True
 except ImportError:
-    print("ℹ️  Supabase not available (optional). Install: pip install supabase")
+    print("[INFO] Supabase not available (optional). Install: pip install supabase")
 
 from pickafresa_robot.robot_system.config_manager import ConfigManager
 from pickafresa_robot.robot_system.ros2_logger import create_logger
@@ -157,7 +157,7 @@ class RobotPnPRemote:
         
         try:
             self.supabase_client = create_client(url, key)
-            self.logger.info("✓ Supabase client initialized")
+            self.logger.info("[OK] Supabase client initialized")
         except Exception as e:
             self.logger.error(f"Supabase initialization failed: {e}")
     
@@ -172,7 +172,7 @@ class RobotPnPRemote:
             self.running = True
             self.mqtt_client.loop_start()
             
-            self.logger.info("✓ MQTT bridge started")
+            self.logger.info("[OK] MQTT bridge started")
             
             # Status monitoring thread
             status_thread = threading.Thread(target=self._status_monitor, daemon=True)
@@ -194,12 +194,12 @@ class RobotPnPRemote:
         self.mqtt_client.loop_stop()
         self.mqtt_client.disconnect()
         
-        self.logger.info("✓ MQTT bridge stopped")
+        self.logger.info("[OK] MQTT bridge stopped")
     
     def _on_mqtt_connect(self, client, userdata, flags, rc):
         """MQTT connection callback."""
         if rc == 0:
-            self.logger.info("✓ Connected to MQTT broker")
+            self.logger.info("[OK] Connected to MQTT broker")
             
             # Subscribe to command topics
             client.subscribe(self.topic_execute_pick)
@@ -274,7 +274,7 @@ class RobotPnPRemote:
     
     def _handle_emergency(self):
         """Handle emergency stop."""
-        self.logger.warning("🚨 EMERGENCY STOP via MQTT")
+        self.logger.warning("[EMERGENCY] EMERGENCY STOP via MQTT")
         
         response = self.service_client.send_command('shutdown')
         self._publish_status(response)
@@ -347,7 +347,7 @@ if __name__ == "__main__":
         config_path = REPO_ROOT / config_path
     
     if not config_path.exists():
-        print(f"✗ Config file not found: {config_path}")
+        print(f"[FAIL] Config file not found: {config_path}")
         sys.exit(1)
     
     # Load config
@@ -357,11 +357,11 @@ if __name__ == "__main__":
     remote = RobotPnPRemote(config=config)
     
     try:
-        print("\n✓ Robot PnP Remote running. Press Ctrl+C to stop.\n")
+        print("\n[OK] Robot PnP Remote running. Press Ctrl+C to stop.\n")
         remote.start()
     except KeyboardInterrupt:
         print("\n\nShutting down...")
         remote.stop()
     except Exception as e:
-        print(f"\n✗ Remote error: {e}")
+        print(f"\n[FAIL] Remote error: {e}")
         traceback.print_exc()

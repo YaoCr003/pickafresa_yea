@@ -159,7 +159,7 @@ def get_sensor_info(sensor) -> Dict[str, Any]:
 
 
 
-# Extended list of (width, height, fps) to try. Ordered high→low bandwidth.
+# Extended list of (width, height, fps) to try. Ordered high->low bandwidth.
 # Includes standard resolutions, square formats, and various framerates.
 DEFAULT_DEPTH_PROFILES = [
     # High resolution - 16:9 and square

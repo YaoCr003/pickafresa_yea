@@ -121,7 +121,7 @@ class RobotPnPManager:
             elif choice == '0' or choice.lower() == 'q':
                 self._quit()
             else:
-                print("\n✗ Invalid option")
+                print("\n[FAIL] Invalid option")
             
             if self.running and choice not in ['5']:  # Don't pause after logs
                 input("\nPress Enter to continue...")
@@ -138,7 +138,7 @@ class RobotPnPManager:
     
     def _print_menu(self):
         """Print menu options."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("MENU:")
         print("  [1] View Status        - Check service and controller state")
         print("  [2] View Statistics    - Request/pick statistics")
@@ -150,13 +150,13 @@ class RobotPnPManager:
         print("  [8] Emergency Stop     - Halt operations immediately")
         print("  [9] Shutdown Service   - Stop robot_pnp_service")
         print("  [0] Quit Manager       - Exit (service keeps running)")
-        print("─" * 80)
+        print("-" * 80)
     
     def _view_status(self):
         """View service and controller status."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("SERVICE STATUS")
-        print("─" * 80)
+        print("-" * 80)
         
         response = self.client.send_command('status')
         
@@ -180,9 +180,9 @@ class RobotPnPManager:
             
             # Connections
             print(f"\nConnections:")
-            print(f"  RoboDK: {'✓ Connected' if controller.get('robodk_connected') else '✗ Disconnected'}")
-            print(f"  Vision: {'✓ Connected' if controller.get('vision_connected') else '✗ Disconnected'}")
-            print(f"  Gripper: {'✓ Connected' if controller.get('gripper_connected') else '✗ Disconnected'}")
+            print(f"  RoboDK: {'[OK] Connected' if controller.get('robodk_connected') else '[FAIL] Disconnected'}")
+            print(f"  Vision: {'[OK] Connected' if controller.get('vision_connected') else '[FAIL] Disconnected'}")
+            print(f"  Gripper: {'[OK] Connected' if controller.get('gripper_connected') else '[FAIL] Disconnected'}")
             
             # Stats (show session stats)
             stats = data['stats']
@@ -194,19 +194,19 @@ class RobotPnPManager:
             # Check if this is a connection error (service not running)
             error_msg = response.get('error', '')
             if 'not running' in error_msg.lower() or 'connection refused' in error_msg.lower() or 'timed out' in error_msg.lower():
-                print("\nℹ️  Service is not running")
+                print("\n[INFO] Service is not running")
                 print("\n   To start the service:")
                 print("   $ python pickafresa_robot/robot_system/robot_pnp_service.py")
                 print("\n   Or with config:")
                 print("   $ python pickafresa_robot/robot_system/robot_pnp_service.py --config <path>")
             else:
-                print(f"✗ Error: {error_msg}")
+                print(f"[FAIL] Error: {error_msg}")
     
     def _view_stats(self):
         """View detailed statistics."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("STATISTICS")
-        print("─" * 80)
+        print("-" * 80)
         
         response = self.client.send_command('stats')
         
@@ -220,7 +220,7 @@ class RobotPnPManager:
                 lifetime = stats['lifetime']
                 
                 # Session statistics
-                print("\n📊 Current Session Statistics:")
+                print("\n[STATS] Current Session Statistics:")
                 print(f"  Started: {session.get('session_started', 'N/A')}")
                 print(f"\n  Requests:")
                 print(f"    Total: {session['requests_total']}")
@@ -241,8 +241,8 @@ class RobotPnPManager:
                     print(f"    Success Rate: {success_rate:.1f}%")
                 
                 # Lifetime statistics
-                print("\n" + "─" * 80)
-                print("🏆 Lifetime Statistics (All Time):")
+                print("\n" + "-" * 80)
+                print("[TROPHY] Lifetime Statistics (All Time):")
                 print(f"  Service Starts: {lifetime.get('service_starts', 0)}")
                 print(f"  First Started: {lifetime.get('first_started', 'N/A')}")
                 print(f"  Last Started: {lifetime.get('last_started', 'N/A')}")
@@ -283,13 +283,13 @@ class RobotPnPManager:
                     success_rate = (stats['picks_success'] / stats['picks_total']) * 100
                     print(f"  Success Rate: {success_rate:.1f}%")
         else:
-            print(f"✗ Error: {response.get('error')}")
+            print(f"[FAIL] Error: {response.get('error')}")
     
     def _execute_pick(self):
         """Execute pick sequence."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("EXECUTE PICK")
-        print("─" * 80)
+        print("-" * 80)
         
         # Check if service is in offline mode
         status_response = self.client.send_command('status')
@@ -303,7 +303,7 @@ class RobotPnPManager:
         
         # If offline mode, prompt for JSON file selection
         if offline_mode:
-            print("\n⚠️  Service running in OFFLINE MODE")
+            print("\n[WARNING] Service running in OFFLINE MODE")
             print("Select JSON data file for pick sequence:\n")
             
             captures_dir = REPO_ROOT / "pickafresa_vision/captures"
@@ -327,28 +327,28 @@ class RobotPnPManager:
                     if not choice:
                         # Use latest (default)
                         json_path = str(latest_file)
-                        print(f"  → Using: {latest_file.name}")
+                        print(f"  -> Using: {latest_file.name}")
                     elif choice.isdigit():
                         idx = int(choice) - 1
                         if 0 <= idx < len(json_files):
                             json_path = str(json_files[idx])
-                            print(f"  → Using: {json_files[idx].name}")
+                            print(f"  -> Using: {json_files[idx].name}")
                         else:
-                            print(f"  ✗ Invalid selection: {choice}")
+                            print(f"  [FAIL] Invalid selection: {choice}")
                             return
                     else:
                         # Custom path
                         json_path = choice
-                        print(f"  → Using: {choice}")
+                        print(f"  -> Using: {choice}")
                 else:
-                    print("  ✗ No JSON files found in captures directory")
+                    print("  [FAIL] No JSON files found in captures directory")
                     print("  Enter full path to JSON file: ", end='')
                     json_path = input().strip()
                     if not json_path:
                         print("  Cancelled")
                         return
             else:
-                print(f"  ✗ Captures directory not found: {captures_dir}")
+                print(f"  [FAIL] Captures directory not found: {captures_dir}")
                 print("  Enter full path to JSON file: ", end='')
                 json_path = input().strip()
                 if not json_path:
@@ -367,9 +367,9 @@ class RobotPnPManager:
             print("Cancelled")
             return
         
-        print(f"\n{'─' * 80}")
+        print(f"\n{'-' * 80}")
         print("EXECUTING PICK SEQUENCE...")
-        print(f"{'─' * 80}")
+        print(f"{'-' * 80}")
         
         # Send command with optional json_path
         cmd_params = {'berry_index': berry_index}
@@ -377,24 +377,24 @@ class RobotPnPManager:
             cmd_params['json_path'] = json_path
         
         # Show execution progress
-        print("\n⏳ Sending command to service...")
+        print("\n[HOURGLASS] Sending command to service...")
         print("   (This may take 2-3 minutes for full pick sequence)")
         print("   Status updates:\n")
         
         response = self.client.send_command('execute_pick', **cmd_params)
         
         if response['status'] == 'success':
-            print(f"\n{'─' * 80}")
-            print("✓ PICK SEQUENCE COMPLETED SUCCESSFULLY")
-            print(f"{'─' * 80}")
+            print(f"\n{'-' * 80}")
+            print("[OK] PICK SEQUENCE COMPLETED SUCCESSFULLY")
+            print(f"{'-' * 80}")
             print(f"  Berry index: {response['data']['berry_index']}")
             print(f"  Completed: {response['data']['completed']}")
             if 'message' in response['data']:
                 print(f"  Message: {response['data']['message']}")
         else:
-            print(f"\n{'─' * 80}")
-            print("✗ PICK SEQUENCE FAILED")
-            print(f"{'─' * 80}")
+            print(f"\n{'-' * 80}")
+            print("[FAIL] PICK SEQUENCE FAILED")
+            print(f"{'-' * 80}")
             error_msg = response.get('error', 'Unknown error')
             print(f"  Error: {error_msg}")
             if 'details' in response:
@@ -402,9 +402,9 @@ class RobotPnPManager:
     
     def _execute_multi_berry(self):
         """Execute multi-berry picking sequence."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("EXECUTE MULTI-BERRY SEQUENCE")
-        print("─" * 80)
+        print("-" * 80)
         
         # Check if service is in offline mode
         status_response = self.client.send_command('status')
@@ -418,7 +418,7 @@ class RobotPnPManager:
         
         # If offline mode, prompt for JSON file selection
         if offline_mode:
-            print("\n⚠️  Service running in OFFLINE MODE")
+            print("\n[WARNING] Service running in OFFLINE MODE")
             print("Select JSON data file for multi-berry sequence:\n")
             
             captures_dir = REPO_ROOT / "pickafresa_vision/captures"
@@ -442,28 +442,28 @@ class RobotPnPManager:
                     if not choice:
                         # Use latest (default)
                         json_path = str(latest_file)
-                        print(f"  → Using: {latest_file.name}")
+                        print(f"  -> Using: {latest_file.name}")
                     elif choice.isdigit():
                         idx = int(choice) - 1
                         if 0 <= idx < len(json_files):
                             json_path = str(json_files[idx])
-                            print(f"  → Using: {json_files[idx].name}")
+                            print(f"  -> Using: {json_files[idx].name}")
                         else:
-                            print(f"  ✗ Invalid selection: {choice}")
+                            print(f"  [FAIL] Invalid selection: {choice}")
                             return
                     else:
                         # Custom path
                         json_path = choice
-                        print(f"  → Using: {choice}")
+                        print(f"  -> Using: {choice}")
                 else:
-                    print("  ✗ No JSON files found in captures directory")
+                    print("  [FAIL] No JSON files found in captures directory")
                     print("  Enter full path to JSON file: ", end='')
                     json_path = input().strip()
                     if not json_path:
                         print("  Cancelled")
                         return
             else:
-                print(f"  ✗ Captures directory not found: {captures_dir}")
+                print(f"  [FAIL] Captures directory not found: {captures_dir}")
                 print("  Enter full path to JSON file: ", end='')
                 json_path = input().strip()
                 if not json_path:
@@ -486,9 +486,9 @@ class RobotPnPManager:
             print("Cancelled")
             return
         
-        print(f"\n{'─' * 80}")
+        print(f"\n{'-' * 80}")
         print("EXECUTING MULTI-BERRY SEQUENCE...")
-        print(f"{'─' * 80}")
+        print(f"{'-' * 80}")
         
         # Send command with optional json_path
         cmd_params = {}
@@ -496,23 +496,23 @@ class RobotPnPManager:
             cmd_params['json_path'] = json_path
         
         # Show execution progress
-        print("\n⏳ Sending command to service...")
+        print("\n[HOURGLASS] Sending command to service...")
         print("   (This may take several minutes for multi-berry sequence)")
         print("   Status updates:\n")
         
         response = self.client.send_command('execute_multi_berry', **cmd_params)
         
         if response['status'] == 'success':
-            print(f"\n{'─' * 80}")
-            print("✓ MULTI-BERRY SEQUENCE COMPLETED SUCCESSFULLY")
-            print(f"{'─' * 80}")
+            print(f"\n{'-' * 80}")
+            print("[OK] MULTI-BERRY SEQUENCE COMPLETED SUCCESSFULLY")
+            print(f"{'-' * 80}")
             print(f"  Completed: {response['data']['completed']}")
             if 'message' in response['data']:
                 print(f"  Message: {response['data']['message']}")
         else:
-            print(f"\n{'─' * 80}")
-            print("✗ MULTI-BERRY SEQUENCE FAILED")
-            print(f"{'─' * 80}")
+            print(f"\n{'-' * 80}")
+            print("[FAIL] MULTI-BERRY SEQUENCE FAILED")
+            print(f"{'-' * 80}")
             error_msg = response.get('error', 'Unknown error')
             print(f"  Error: {error_msg}")
             if 'details' in response:
@@ -520,21 +520,21 @@ class RobotPnPManager:
     
     def _view_logs(self):
         """View service logs (tail -f style)."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("SERVICE LOGS")
-        print("─" * 80)
+        print("-" * 80)
         
         log_dir = REPO_ROOT / "pickafresa_robot/logs"
         
         if not log_dir.exists():
-            print(f"\n✗ Log directory not found: {log_dir}")
+            print(f"\n[FAIL] Log directory not found: {log_dir}")
             return
         
         # Find all .log files
         log_files = sorted(log_dir.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
         
         if not log_files:
-            print(f"\n✗ No log files found in: {log_dir}")
+            print(f"\n[FAIL] No log files found in: {log_dir}")
             return
         
         # Show menu if multiple files
@@ -554,22 +554,22 @@ class RobotPnPManager:
                     if 0 <= idx < len(log_files):
                         log_file = log_files[idx]
                     else:
-                        print(f"✗ Invalid selection. Using most recent.")
+                        print(f"[FAIL] Invalid selection. Using most recent.")
                         log_file = log_files[0]
                 except ValueError:
-                    print(f"✗ Invalid input. Using most recent.")
+                    print(f"[FAIL] Invalid input. Using most recent.")
                     log_file = log_files[0]
             else:
                 log_file = log_files[0]
         else:
             log_file = log_files[0]
         
-        print(f"\n📄 Viewing: {log_file.name}")
-        print("─" * 80)
+        print(f"\n[FILE] Viewing: {log_file.name}")
+        print("-" * 80)
         print("(Press Ctrl+C to stop)\n")
         
         if not log_file.exists():
-            print(f"\n✗ Log file not found: {log_file}")
+            print(f"\n[FAIL] Log file not found: {log_file}")
             return
         
         try:
@@ -587,9 +587,9 @@ class RobotPnPManager:
     
     def _edit_config(self):
         """Edit hot-reloadable config parameters."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("EDIT CONFIGURATION")
-        print("─" * 80)
+        print("-" * 80)
         
         print("\nHot-reloadable parameters:")
         hot_reload_keys = [
@@ -623,28 +623,28 @@ class RobotPnPManager:
     
     def _reload_config(self):
         """Reload configuration."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("RELOAD CONFIGURATION")
-        print("─" * 80)
+        print("-" * 80)
         
         response = self.client.send_command('reload_config')
         
         if response['status'] == 'success':
-            print("✓ Configuration reloaded")
+            print("[OK] Configuration reloaded")
             print(f"  {response['data']['message']}")
             
             # Reload local config too
             self.config.reload()
         else:
-            print(f"✗ Error: {response.get('error')}")
+            print(f"[FAIL] Error: {response.get('error')}")
     
     def _emergency_stop(self):
         """Emergency stop."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("EMERGENCY STOP")
-        print("─" * 80)
+        print("-" * 80)
         
-        print("\n⚠️  WARNING: This will halt all operations immediately!")
+        print("\n[WARNING] WARNING: This will halt all operations immediately!")
         confirm = input("Confirm emergency stop? [y/N]: ").strip().lower()
         
         if confirm != 'y':
@@ -652,22 +652,22 @@ class RobotPnPManager:
             return
         
         # Send emergency stop (implementation depends on state machine)
-        print("\n🚨 EMERGENCY STOP TRIGGERED")
+        print("\n[EMERGENCY] EMERGENCY STOP TRIGGERED")
         print("(Implementation: Send to state machine or direct RoboDK stop)")
         
         # For now, just shutdown gracefully
         response = self.client.send_command('shutdown')
         
         if response['status'] == 'success':
-            print("✓ Service stopped")
+            print("[OK] Service stopped")
         else:
-            print(f"✗ Error: {response.get('error')}")
+            print(f"[FAIL] Error: {response.get('error')}")
     
     def _shutdown_service(self):
         """Shutdown service."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("SHUTDOWN SERVICE")
-        print("─" * 80)
+        print("-" * 80)
         
         confirm = input("\nShutdown robot_pnp_service? [y/N]: ").strip().lower()
         if confirm != 'y':
@@ -679,16 +679,16 @@ class RobotPnPManager:
         response = self.client.send_command('shutdown')
         
         if response['status'] == 'success':
-            print("✓ Service shutdown initiated")
+            print("[OK] Service shutdown initiated")
             print(f"  {response['data']['message']}")
         else:
-            print(f"✗ Error: {response.get('error')}")
+            print(f"[FAIL] Error: {response.get('error')}")
     
     def _quit(self):
         """Quit manager."""
-        print("\n" + "─" * 80)
+        print("\n" + "-" * 80)
         print("QUIT MANAGER")
-        print("─" * 80)
+        print("-" * 80)
         
         print("\nNOTE: Service will continue running in background")
         confirm = input("Exit manager? [Y/n]: ").strip().lower()
@@ -715,7 +715,7 @@ if __name__ == "__main__":
         config_path = REPO_ROOT / config_path
     
     if not config_path.exists():
-        print(f"✗ Config file not found: {config_path}")
+        print(f"[FAIL] Config file not found: {config_path}")
         sys.exit(1)
     
     # Create and run manager
@@ -726,6 +726,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\nInterrupted. Exiting...")
     except Exception as e:
-        print(f"\n✗ Manager error: {e}")
+        print(f"\n[FAIL] Manager error: {e}")
         import traceback
         traceback.print_exc()

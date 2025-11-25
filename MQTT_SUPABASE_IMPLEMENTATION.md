@@ -229,7 +229,7 @@ if mqtt_enabled:
     )
     if self.mqtt_bridge.is_enabled():
         self.mqtt_bridge.start()
-        self.logger.info("✓ MQTT bridge started")
+        self.logger.info("[OK] MQTT bridge started")
     else:
         self.mqtt_bridge = None
 ```

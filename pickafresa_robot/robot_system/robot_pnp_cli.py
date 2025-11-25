@@ -166,7 +166,7 @@ class SessionStatistics:
             return (
                 f"Session: {hours:02d}:{minutes:02d}:{seconds:02d} | "
                 f"Berries: {self.total_berries_picked} "
-                f"(✓{self.successful_picks} ✗{self.failed_picks}) | "
+                f"([OK]{self.successful_picks} [FAIL]{self.failed_picks}) | "
                 f"Captures: {self.total_captures} | "
                 f"Standby cycles: {self.standby_cycles}"
             )
@@ -659,10 +659,10 @@ class RobotPnPCLI:
         
         if run_mode == 'autonomous':
             self.config['multi_berry']['mode'] = 'full_auto'
-            print("  → Multi-berry mode auto-set to: full_auto")
+            print("  -> Multi-berry mode auto-set to: full_auto")
         else:
             self.config['multi_berry']['mode'] = 'semi_auto'
-            print("  → Multi-berry mode auto-set to: semi_auto")
+            print("  -> Multi-berry mode auto-set to: semi_auto")
         
         print(f"\n[OK] Configuration confirmed")
         print(f"     Run mode: {self.config['run_mode']}")
@@ -1307,7 +1307,7 @@ class RobotPnPCLI:
             self.keyboard_running = True
             self.keyboard_thread = threading.Thread(target=self._keyboard_monitor_loop, daemon=True)
             self.keyboard_thread.start()
-            self.logger.info("✓ Keyboard monitoring active (Press SPACE or 'P' to pause/resume)")
+            self.logger.info("[OK] Keyboard monitoring active (Press SPACE or 'P' to pause/resume)")
         except Exception as e:
             self.logger.warn(f"Could not start keyboard monitoring: {e}")
     
@@ -1348,14 +1348,14 @@ class RobotPnPCLI:
         if self.pause_requested:
             # Currently paused - resume
             self.pause_requested = False
-            self.logger.info("⏵  RESUMED via keyboard")
+            self.logger.info("[RESUME]  RESUMED via keyboard")
             if self.mqtt_bridge:
                 self.mqtt_bridge.publish_log("INFO", "Resumed via keyboard")
                 self.mqtt_bridge.publish_status("RUNNING")
         else:
             # Currently running - pause
             self.pause_requested = True
-            self.logger.info("⏸  PAUSED via keyboard (will pause at safe point)")
+            self.logger.info("[PAUSE]  PAUSED via keyboard (will pause at safe point)")
             if self.mqtt_bridge:
                 self.mqtt_bridge.publish_log("WARN", "Paused via keyboard")
                 self.mqtt_bridge.publish_status("STANDBY", {"paused": True, "source": "keyboard"})
@@ -1674,7 +1674,7 @@ class RobotPnPCLI:
                 # Option B: Display success and wait for user input
                 if success:
                     print("\n" + "="*70)
-                    print("✓ PICK VERIFICATION SUCCESSFUL")
+                    print("[OK] PICK VERIFICATION SUCCESSFUL")
                     print("="*70)
                     print(f"All ripe berries have been successfully picked!")
                     print(f"Verification found: {num_ripe} ripe berry/berries (max allowed: {max_ripe_allowed})")
@@ -1690,7 +1690,7 @@ class RobotPnPCLI:
             # Always use Option B
             if success:
                 print("\n" + "="*70)
-                print("✓ PICK VERIFICATION SUCCESSFUL")
+                print("[OK] PICK VERIFICATION SUCCESSFUL")
                 print("="*70)
                 print(f"All ripe berries have been successfully picked!")
                 print(f"Verification found: {num_ripe} ripe berry/berries (max allowed: {max_ripe_allowed})")
@@ -1987,8 +1987,8 @@ class RobotPnPCLI:
         """
         Execute the legacy hard-coded sequence.
         
-        For JSON mode: Single pass - Home → Foto → Load JSON → Process All Fruits → Home
-        For API/Vision modes: Continuous loop - Home → [Foto → Capture → Process Single Fruit]* → Home
+        For JSON mode: Single pass - Home -> Foto -> Load JSON -> Process All Fruits -> Home
+        For API/Vision modes: Continuous loop - Home -> [Foto -> Capture -> Process Single Fruit]* -> Home
         
         The loop continues until no detections are found or max_berries_per_run is reached.
         """
@@ -2008,7 +2008,7 @@ class RobotPnPCLI:
         
         if continuous_mode:
             # CONTINUOUS CAPTURE MODE (API/Vision)
-            # Loop: Foto → Capture → Pick ALL berries from capture → repeat
+            # Loop: Foto -> Capture -> Pick ALL berries from capture -> repeat
             self.logger.info("=" * 60)
             self.logger.info("CONTINUOUS CAPTURE MODE - Active until no detections")
             self.logger.info(f"Max berries per run: {max_berries}")
@@ -2096,7 +2096,7 @@ class RobotPnPCLI:
             
         else:
             # SINGLE-PASS MODE (JSON)
-            # Traditional flow: Home → Foto → Load → Process All → Home
+            # Traditional flow: Home -> Foto -> Load -> Process All -> Home
             self.logger.info("Single-pass mode (JSON) - processing all detections once")
             
             # Step 2: Move to Foto position
@@ -2162,7 +2162,7 @@ class RobotPnPCLI:
                 )
         
         except RobotEmergencyStopError as e:
-            self.logger.error(f"🚨 EMERGENCY STOP DETECTED: {e}")
+            self.logger.error(f"[EMERGENCY] EMERGENCY STOP DETECTED: {e}")
             self.logger.error("System HALTED - Reset e-stop on teach pendant to continue")
             self.emergency_stop_requested = True
             if self.mqtt_bridge:
@@ -2176,7 +2176,7 @@ class RobotPnPCLI:
             return False
         
         except RobotCollisionError as e:
-            self.logger.error(f"⚠️  COLLISION DETECTED: {e}")
+            self.logger.error(f"[WARNING] COLLISION DETECTED: {e}")
             self.logger.error("System HALTED - Check robot and clear collision")
             if self.mqtt_bridge:
                 self.mqtt_bridge.publish_status("ERROR", {"collision": True})
@@ -2189,7 +2189,7 @@ class RobotPnPCLI:
             return False
         
         except RobotSafetyError as e:
-            self.logger.error(f"⛔ SAFETY ERROR: {e}")
+            self.logger.error(f"[SAFETY] SAFETY ERROR: {e}")
             self.logger.error("System HALTED - Manual intervention required")
             if self.mqtt_bridge:
                 self.mqtt_bridge.publish_status("ERROR", {"safety_error": str(e)})
@@ -2238,7 +2238,7 @@ class RobotPnPCLI:
                 )
         
         except RobotEmergencyStopError as e:
-            self.logger.error(f"🚨 EMERGENCY STOP DETECTED: {e}")
+            self.logger.error(f"[EMERGENCY] EMERGENCY STOP DETECTED: {e}")
             self.logger.error("System HALTED - Reset e-stop on teach pendant to continue")
             self.emergency_stop_requested = True
             if self.mqtt_bridge:
@@ -2250,7 +2250,7 @@ class RobotPnPCLI:
             return False
         
         except RobotCollisionError as e:
-            self.logger.error(f"⚠️  COLLISION DETECTED: {e}")
+            self.logger.error(f"[WARNING] COLLISION DETECTED: {e}")
             self.logger.error("System HALTED - Check robot and clear collision")
             if self.mqtt_bridge:
                 self.mqtt_bridge.publish_status("ERROR", {"collision": True})
@@ -2262,7 +2262,7 @@ class RobotPnPCLI:
             return False
         
         except RobotSafetyError as e:
-            self.logger.error(f"⛔ SAFETY ERROR: {e}")
+            self.logger.error(f"[SAFETY] SAFETY ERROR: {e}")
             self.logger.error("System HALTED - Manual intervention required")
             if self.mqtt_bridge:
                 self.mqtt_bridge.publish_status("ERROR", {"safety_error": str(e)})
@@ -2518,7 +2518,7 @@ class RobotPnPCLI:
             self.logger.info("=" * 60)
             
             # CRITICAL: For berry #2 onwards, ensure robot is at correct position
-            # Must return to Home → Foto to ensure proper transformation
+            # Must return to Home -> Foto to ensure proper transformation
             # In continuous_operation mode with multi_berry_recapture, also recapture
             if i > 1:
                 self.logger.info("=" * 60)
@@ -3474,15 +3474,15 @@ class RobotPnPCLI:
                 
                 if 'x' in refine_axes:
                     T_base_pick_refined[0, 3] = T_base_fruit_refined[0, 3]
-                    self.logger.info(f"Refined X: {fruit.T_base_fruit[0,3]*1000:.1f} → {T_base_fruit_refined[0,3]*1000:.1f} mm")
+                    self.logger.info(f"Refined X: {fruit.T_base_fruit[0,3]*1000:.1f} -> {T_base_fruit_refined[0,3]*1000:.1f} mm")
                 
                 if 'y' in refine_axes:
                     T_base_pick_refined[1, 3] = T_base_fruit_refined[1, 3]
-                    self.logger.info(f"Refined Y: {fruit.T_base_fruit[1,3]*1000:.1f} → {T_base_fruit_refined[1,3]*1000:.1f} mm")
+                    self.logger.info(f"Refined Y: {fruit.T_base_fruit[1,3]*1000:.1f} -> {T_base_fruit_refined[1,3]*1000:.1f} mm")
                 
                 if 'z' in refine_axes:
                     T_base_pick_refined[2, 3] = T_base_fruit_refined[2, 3]
-                    self.logger.info(f"Refined Z: {fruit.T_base_fruit[2,3]*1000:.1f} → {T_base_fruit_refined[2,3]*1000:.1f} mm")
+                    self.logger.info(f"Refined Z: {fruit.T_base_fruit[2,3]*1000:.1f} -> {T_base_fruit_refined[2,3]*1000:.1f} mm")
                 
                 self.logger.info("[OK] Stage 3 complete - Position refined")
                 return T_base_pick_refined
@@ -3586,10 +3586,10 @@ class RobotPnPCLI:
                 if move_type == "linear":
                     max_delta = max(abs(d) for d in joint_deltas_deg)
                     if max_delta > 360:
-                        self.logger.warn(f"⚠️  WARNING: move_type='linear' with joint delta {max_delta:.1f}° (>360°)")
+                        self.logger.warn(f"[WARNING] WARNING: move_type='linear' with joint delta {max_delta:.1f}deg (>360deg)")
                         self.logger.warn(f"   Linear moves use Cartesian interpolation and cannot execute multi-revolution rotations!")
                         self.logger.warn(f"   Change move_type to 'joint' in config for proper multi-revolution movement.")
-                        self.logger.warn(f"   The robot may only rotate ±180° instead of the requested {max_delta:.1f}°")
+                        self.logger.warn(f"   The robot may only rotate +/-180deg instead of the requested {max_delta:.1f}deg")
                 
                 # Apply cumulative joint deltas to our tracked cumulative values
                 # This ensures we maintain the true cumulative angles even if RoboDK normalizes them
@@ -3598,13 +3598,13 @@ class RobotPnPCLI:
                 self.logger.info(f"  Current joints: {[f'{j:.2f}' for j in cumulative_joints]}")
                 self.logger.info(f"  Target joints:  {[f'{j:.2f}' for j in target_joints]}")
                 
-                # Check for potential joint limit issues (common UR limits: ±360° per joint)
+                # Check for potential joint limit issues (common UR limits: +/-360deg per joint)
                 # Note: User should verify and update RoboDK joint limits if needed
                 for j_idx, (current, target) in enumerate(zip(cumulative_joints, target_joints)):
                     if abs(target) > 360:
-                        self.logger.warn(f"⚠️  Joint {j_idx} (j{j_idx+1}) target: {target:.1f}° exceeds typical ±360° limits")
+                        self.logger.warn(f"[WARNING] Joint {j_idx} (j{j_idx+1}) target: {target:.1f}deg exceeds typical +/-360deg limits")
                         self.logger.warn(f"   Verify RoboDK joint limits are configured to allow this range")
-                        self.logger.warn(f"   Recommended limits for multi-revolution: ±2160° (6 full rotations)")
+                        self.logger.warn(f"   Recommended limits for multi-revolution: +/-2160deg (6 full rotations)")
                 
                 # Update cumulative joints for next iteration
                 cumulative_joints = list(target_joints)
@@ -3652,7 +3652,7 @@ class RobotPnPCLI:
                     T_current[:3, 3] /= 1000.0  # Convert to meters
                     
                     # Note: We do NOT update cumulative_joints from RoboDK readback
-                    # because RoboDK may normalize angles (e.g., 1088° -> 8°)
+                    # because RoboDK may normalize angles (e.g., 1088deg -> 8deg)
                     # We maintain our own cumulative tracking above
                 except Exception as e:
                     self.logger.error(f"Failed to update robot state: {e}")

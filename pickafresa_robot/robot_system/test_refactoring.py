@@ -17,37 +17,37 @@ print("=" * 70)
 
 try:
     from pickafresa_robot.robot_system.transform_utils import TransformUtils
-    print("✓ TransformUtils imported")
+    print("[OK] TransformUtils imported")
 except Exception as e:
-    print(f"✗ TransformUtils import failed: {e}")
+    print(f"[FAIL] TransformUtils import failed: {e}")
     sys.exit(1)
 
 try:
     from pickafresa_robot.robot_system.config_manager import ConfigManager
-    print("✓ ConfigManager imported")
+    print("[OK] ConfigManager imported")
 except Exception as e:
-    print(f"✗ ConfigManager import failed: {e}")
+    print(f"[FAIL] ConfigManager import failed: {e}")
     sys.exit(1)
 
 try:
     from pickafresa_robot.robot_system.vision_client import VisionServiceClient, FruitDetection
-    print("✓ VisionServiceClient imported")
+    print("[OK] VisionServiceClient imported")
 except Exception as e:
-    print(f"✗ VisionServiceClient import failed: {e}")
+    print(f"[FAIL] VisionServiceClient import failed: {e}")
     sys.exit(1)
 
 try:
     from pickafresa_robot.robot_system.state_machine import RobotStateMachine, RobotState
-    print("✓ RobotStateMachine imported")
+    print("[OK] RobotStateMachine imported")
 except Exception as e:
-    print(f"✗ RobotStateMachine import failed: {e}")
+    print(f"[FAIL] RobotStateMachine import failed: {e}")
     sys.exit(1)
 
 try:
     from pickafresa_robot.robot_system.robot_pnp_cli import RobotPnPCLI
-    print("✓ RobotPnPCLI imported")
+    print("[OK] RobotPnPCLI imported")
 except Exception as e:
-    print(f"✗ RobotPnPCLI import failed: {e}")
+    print(f"[FAIL] RobotPnPCLI import failed: {e}")
     sys.exit(1)
 
 print("\n" + "=" * 70)
@@ -62,7 +62,7 @@ T = TransformUtils.create_transform_matrix(
     input_units="mm"
 )
 print(f"   Translation (m): {T[:3, 3]}")
-print(f"   ✓ Transform created")
+print(f"   [OK] Transform created")
 
 # Test ConfigManager
 print("\n[2] ConfigManager.load")
@@ -73,9 +73,9 @@ if config_path.exists():
     robot_model = config_mgr.get('robodk.robot_model')
     print(f"   Run mode: {run_mode}")
     print(f"   Robot model: {robot_model}")
-    print(f"   ✓ Config loaded")
+    print(f"   [OK] Config loaded")
 else:
-    print(f"   ⚠ Config file not found: {config_path}")
+    print(f"   [WARNING] Config file not found: {config_path}")
 
 # Test FruitDetection
 print("\n[3] FruitDetection creation")
@@ -88,26 +88,26 @@ det_dict = {
 }
 fruit = FruitDetection(det_dict)
 print(f"   Class: {fruit.class_name}, Confidence: {fruit.confidence:.2f}")
-print(f"   ✓ FruitDetection created")
+print(f"   [OK] FruitDetection created")
 
 # Test StateMachine
 print("\n[4] RobotStateMachine transitions")
 sm = RobotStateMachine(initial_state=RobotState.IDLE)  # Start in IDLE to avoid transition delay
 print(f"   Initial state: {sm.state_name}")
 print(f"   Is operational: {sm.is_operational()}")
-print(f"   ✓ State machine working")
+print(f"   [OK] State machine working")
 
 # Test RobotPnPCLI instantiation
 print("\n[5] RobotPnPCLI instantiation")
 try:
     # Don't actually run it, just create instance
     cli = RobotPnPCLI(config_path=config_path)
-    print(f"   ✓ RobotPnPCLI instance created")
+    print(f"   [OK] RobotPnPCLI instance created")
 except Exception as e:
-    print(f"   ⚠ Could not create instance: {e}")
+    print(f"   [WARNING] Could not create instance: {e}")
 
 print("\n" + "=" * 70)
-print("✅ ALL TESTS PASSED - Refactoring successful!")
+print("[SUCCESS] ALL TESTS PASSED - Refactoring successful!")
 print("=" * 70)
 print("\nRefactored modules are working correctly.")
 print("robot_pnp_cli is ready for use with shared modules.")

@@ -131,7 +131,7 @@ class SupabaseUploader:
         try:
             logger.debug("Attempting to create Supabase client...")
             self.client = create_client(self.supabase_url, self.supabase_key)
-            logger.info(f"✓ Supabase uploader initialized (bucket: {self.bucket_name})")
+            logger.info(f"[OK] Supabase uploader initialized (bucket: {self.bucket_name})")
         except Exception as e:
             logger.error(f"Failed to initialize Supabase client: {e}")
             import traceback
@@ -186,7 +186,7 @@ class SupabaseUploader:
             
             db_result = self.client.table("images").insert(data).execute()
             
-            logger.info(f"✓ Image uploaded: {unique_filename}")
+            logger.info(f"[OK] Image uploaded: {unique_filename}")
             return True, "Image uploaded successfully", unique_filename
         
         except Exception as e:
@@ -236,7 +236,7 @@ class SupabaseUploader:
             
             db_result = self.client.table("json_files").insert(data).execute()
             
-            logger.info(f"✓ JSON uploaded: {unique_filename}")
+            logger.info(f"[OK] JSON uploaded: {unique_filename}")
             return True, "JSON uploaded successfully", unique_filename
         
         except Exception as e:
@@ -351,7 +351,7 @@ def main():
     uploader = SupabaseUploader()
     
     if not uploader.is_enabled():
-        print("❌ Supabase uploader not enabled. Check credentials in .env")
+        print("[ERROR] Supabase uploader not enabled. Check credentials in .env")
         return 1
     
     if args.image and args.json:
@@ -363,9 +363,9 @@ def main():
             
             def callback(success, message, results):
                 if success:
-                    print(f"✓ Upload complete: {message}")
+                    print(f"[OK] Upload complete: {message}")
                 else:
-                    print(f"✗ Upload failed: {message}")
+                    print(f"[FAIL] Upload failed: {message}")
             
             thread = uploader.upload_capture_async(image_path, json_path, callback)
             thread.join()  # Wait for completion
@@ -374,11 +374,11 @@ def main():
             results = uploader.upload_capture(image_path, json_path)
             
             if results["success"]:
-                print(f"✓ Upload complete")
+                print(f"[OK] Upload complete")
                 print(f"  Image: {results['image_path']}")
                 print(f"  JSON: {results['json_path']}")
             else:
-                print(f"✗ Upload failed: {results['error']}")
+                print(f"[FAIL] Upload failed: {results['error']}")
     else:
         print("Please provide --image and --json paths")
         return 1

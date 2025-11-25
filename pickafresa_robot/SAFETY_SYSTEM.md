@@ -42,7 +42,7 @@ The system continuously monitors for collisions during robot operation:
 ### When Collision Is Detected
 
 ```
-⚠️  COLLISION DETECTED: Collision detected (count: 2): Collision detected during movement
+[WARNING] COLLISION DETECTED: Collision detected (count: 2): Collision detected during movement
 System HALTED - Check robot and clear collision
 
 Collision cleared? Retry movement? [y/N]: 
@@ -79,7 +79,7 @@ The system monitors for emergency stop activation on the UR robot teach pendant:
 ### When E-Stop Is Activated
 
 ```
-🚨 EMERGENCY STOP DETECTED: Emergency stop activated on robot
+[EMERGENCY] EMERGENCY STOP DETECTED: Emergency stop activated on robot
 System HALTED - Reset e-stop on teach pendant to continue
 
 Press Enter after resetting emergency stop...
@@ -124,10 +124,10 @@ The `check_robot_safety_status()` method runs:
 
 **Behavior**:
 ```
-⏸  PAUSED via keyboard (will pause at safe point)
+[PAUSE]  PAUSED via keyboard (will pause at safe point)
 [System completes current operation safely, then pauses]
 
-⏵  RESUMED via keyboard
+[RESUME]  RESUMED via keyboard
 [System continues from paused state]
 ```
 
@@ -161,8 +161,8 @@ System pauses only at safe points:
 
 ```python
 RobotSafetyError           # Base safety exception
-├── RobotEmergencyStopError  # E-stop activated
-└── RobotCollisionError      # Collision detected
+|-- RobotEmergencyStopError  # E-stop activated
+\`-- RobotCollisionError      # Collision detected
 ```
 
 ### Exception Propagation
@@ -178,15 +178,15 @@ RobotSafetyError           # Base safety exception
 
 ```
 Movement Request
-    ↓
-Pre-Movement Safety Check ────→ [HALT if unsafe]
-    ↓
+    |
+Pre-Movement Safety Check ---> [HALT if unsafe]
+    |
 Execute Movement
-    ↓
-Movement Exception? ────→ Check Safety Status ────→ [HALT if e-stop/collision]
-    ↓
-Post-Movement Safety Check ────→ [HALT if unsafe]
-    ↓
+    |
+Movement Exception? ---> Check Safety Status ---> [HALT if e-stop/collision]
+    |
+Post-Movement Safety Check ---> [HALT if unsafe]
+    |
 Movement Complete
 ```
 

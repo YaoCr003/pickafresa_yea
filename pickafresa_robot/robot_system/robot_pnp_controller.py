@@ -123,7 +123,7 @@ class RobotPnPController:
                 self._log("warning", f"State machine transition failed: {sm_error}")
                 # Don't fail initialization just because state transition failed
             
-            self._log("info", "✓ Controller initialization complete")
+            self._log("info", "[OK] Controller initialization complete")
             return True
         
         except Exception as e:
@@ -197,7 +197,7 @@ class RobotPnPController:
             if not self.robodk_manager.move_to_target("Foto", "joint", confirm=False):
                 self._log("warning", "Failed to move to Foto position - continuing anyway")
             
-            self._log("info", "✓ RoboDK initialized successfully")
+            self._log("info", "[OK] RoboDK initialized successfully")
             return True
         
         except Exception as e:
@@ -224,7 +224,7 @@ class RobotPnPController:
             )
             
             if self.mqtt_gripper.connect():
-                self._log("info", "✓ MQTT gripper initialized")
+                self._log("info", "[OK] MQTT gripper initialized")
                 return True
             else:
                 self._log("warning", "MQTT gripper connection failed (optional)")
@@ -250,7 +250,7 @@ class RobotPnPController:
                 logger=self.logger
             )
             
-            self._log("info", "✓ PnP handler initialized")
+            self._log("info", "[OK] PnP handler initialized")
             return True
         
         except Exception as e:
@@ -275,7 +275,7 @@ class RobotPnPController:
             if not status.get('alive', False):
                 raise VisionServiceError("Service not alive")
             
-            self._log("info", "✓ Vision client initialized")
+            self._log("info", "[OK] Vision client initialized")
             self.offline_mode = False
             return True
         
@@ -288,7 +288,7 @@ class RobotPnPController:
             self.offline_mode = True
             self.vision_client = None
             
-            self._log("info", "✓ Controller initialized in OFFLINE MODE (vision service unavailable)")
+            self._log("info", "[OK] Controller initialized in OFFLINE MODE (vision service unavailable)")
             return True
     
     def shutdown(self):
@@ -335,7 +335,7 @@ class RobotPnPController:
                 pass
         
         self.is_initialized = False
-        self._log("info", "✓ Controller shutdown complete")
+        self._log("info", "[OK] Controller shutdown complete")
     
     def execute_pick_sequence(self, berry_index: int = 0, json_path: Optional[str] = None) -> bool:
         """
@@ -365,7 +365,7 @@ class RobotPnPController:
             fixed_targets = self.config.get('robodk', {}).get('fixed_targets', ['Home', 'Foto', 'Prepick_plane', 'place_final'])
             cleaned_count = self.robodk_manager.cleanup_dynamic_targets(fixed_targets)
             if cleaned_count > 0:
-                self._log("info", f"✓ Cleaned up {cleaned_count} targets/frames from previous berry cycles")
+                self._log("info", f"[OK] Cleaned up {cleaned_count} targets/frames from previous berry cycles")
             
             # Robot should already be at Foto position (idle detection mode)
             # Capture vision data
@@ -407,7 +407,7 @@ class RobotPnPController:
                 self._log("warning", "Failed to return to Foto position")
             
             self.state_machine.to_idle("Sequence complete")
-            self._log("info", f"✓ Pick sequence #{berry_index} completed successfully")
+            self._log("info", f"[OK] Pick sequence #{berry_index} completed successfully")
             return True
         
         except StateTransitionError as e:
@@ -432,9 +432,9 @@ class RobotPnPController:
             try:
                 self._log("info", "Attempting recovery to Foto position...")
                 if self.robodk_manager.move_to_target("Foto", "joint", confirm=False):
-                    self._log("info", "✓ Returned to Foto position")
+                    self._log("info", "[OK] Returned to Foto position")
                     self.state_machine.to_idle("Recovery after pick failure")
-                    self._log("info", "✓ Recovered to IDLE state")
+                    self._log("info", "[OK] Recovered to IDLE state")
                 else:
                     self._log("warning", "Failed to return to Foto position during recovery")
             except Exception as recovery_error:
@@ -537,7 +537,7 @@ class RobotPnPController:
                         self.state_machine.to_error("Failed to reach Foto")
                         return False
                     
-                    self._log("info", "✓ Robot positioned at Foto for berry transformation")
+                    self._log("info", "[OK] Robot positioned at Foto for berry transformation")
                 
                 # Attempt to pick this berry (with retry logic)
                 success = False
@@ -552,7 +552,7 @@ class RobotPnPController:
                     
                     if success:
                         successful_picks += 1
-                        self._log("info", f"✓ Berry {berry_letter} picked successfully")
+                        self._log("info", f"[OK] Berry {berry_letter} picked successfully")
                         break
                     else:
                         retry_count += 1
@@ -673,7 +673,7 @@ class RobotPnPController:
             self._log("error", f"Pick sequence failed for Berry {berry_letter}")
             return False
         
-        self._log("info", f"✓ Berry {berry_letter} sequence completed")
+        self._log("info", f"[OK] Berry {berry_letter} sequence completed")
         return True
     
     def _move_home(self) -> bool:
@@ -684,7 +684,7 @@ class RobotPnPController:
         if not self.robodk_manager.move_to_target("Home", "joint", confirm=False):
             self._log("error", "Failed to move to Home position")
             return False
-        self._log("info", "✓ Reached Home position")
+        self._log("info", "[OK] Reached Home position")
         return True
     
     def _move_foto(self) -> bool:
@@ -695,7 +695,7 @@ class RobotPnPController:
         if not self.robodk_manager.move_to_target("Foto", "joint", confirm=False):
             self._log("error", "Failed to move to Foto position")
             return False
-        self._log("info", "✓ Reached Foto position")
+        self._log("info", "[OK] Reached Foto position")
         return True
     
     def _capture_detections(self, json_path: Optional[str] = None) -> List[FruitDetection]:
@@ -760,7 +760,7 @@ class RobotPnPController:
                 class_filter=[preferred_class] if preferred_class else None
             )
             
-            self._log("info", f"✓ Received {len(detections)} valid detection(s) from vision service")
+            self._log("info", f"[OK] Received {len(detections)} valid detection(s) from vision service")
             return detections
         except Exception as e:
             self._log("error", f"Vision service request failed: {e}")
@@ -799,7 +799,7 @@ class RobotPnPController:
             with open(json_file, 'r') as f:
                 data = json.load(f)
             
-            self._log("info", f"✓ Loaded data from: {json_file.name}")
+            self._log("info", f"[OK] Loaded data from: {json_file.name}")
             
             # Extract detections (newer format has pose data embedded, older has separate pose_results)
             detections_data = data.get('detections', [])
@@ -820,7 +820,7 @@ class RobotPnPController:
                 if detection.get('success', False):
                     fruit_detections.append(FruitDetection(detection))
             
-            self._log("info", f"✓ Loaded {len(fruit_detections)} valid detection(s) from JSON")
+            self._log("info", f"[OK] Loaded {len(fruit_detections)} valid detection(s) from JSON")
             
             # Apply config filters if specified
             pnp_config = self.config.get('pnp_data', {}).get('json', {})
@@ -1349,7 +1349,7 @@ class RobotPnPController:
             self._log("error", "Failed to create targets")
             return False
         
-        self._log("info", f"✓ Created targets: prepick_{berry_letter}, pick_{berry_letter}")
+        self._log("info", f"[OK] Created targets: prepick_{berry_letter}, pick_{berry_letter}")
         return True
     
     def _execute_post_pick_detachment(self, T_base_fruit: np.ndarray, berry_label: str, collision_config: Dict[str, Any]) -> bool:
@@ -1637,7 +1637,7 @@ if __name__ == "__main__":
     # Initialize
     print("\n[1] Initializing controller...")
     if controller.initialize():
-        print("✓ Controller initialized")
+        print("[OK] Controller initialized")
         
         # Get status
         status = controller.get_status()
@@ -1648,6 +1648,6 @@ if __name__ == "__main__":
         
         # Shutdown
         controller.shutdown()
-        print("\n✓ Test complete")
+        print("\n[OK] Test complete")
     else:
-        print("✗ Controller initialization failed")
+        print("[FAIL] Controller initialization failed")

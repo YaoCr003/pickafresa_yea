@@ -379,7 +379,7 @@ if __name__ == "__main__":
     print("\n[Test 6] State callbacks")
     
     def on_idle_entry(state):
-        print(f"  → Callback triggered: Entered {state.name}")
+        print(f"  -> Callback triggered: Entered {state.name}")
     
     sm.register_callback(RobotState.IDLE, on_idle_entry)
     sm.reset_from_error("Reset from E-stop")

@@ -858,9 +858,9 @@ class VisionService:
                             # Non-blocking upload
                             def upload_callback(success, message, results):
                                 if success:
-                                    logger.info(f"✓ Uploaded to Supabase: {timestamp}")
+                                    logger.info(f"[OK] Uploaded to Supabase: {timestamp}")
                                 else:
-                                    logger.warning(f"✗ Supabase upload failed: {message}")
+                                    logger.warning(f"[FAIL] Supabase upload failed: {message}")
                             
                             self.supabase_uploader.upload_capture_async(
                                 image_path,
@@ -871,9 +871,9 @@ class VisionService:
                             # Blocking upload
                             results = self.supabase_uploader.upload_capture(image_path, json_path)
                             if results["success"]:
-                                logger.info(f"✓ Uploaded to Supabase: {timestamp}")
+                                logger.info(f"[OK] Uploaded to Supabase: {timestamp}")
                             else:
-                                logger.warning(f"✗ Supabase upload failed: {results.get('error')}")
+                                logger.warning(f"[FAIL] Supabase upload failed: {results.get('error')}")
                 else:
                     if not supabase_config.get("enabled", False):
                         logger.debug("Supabase upload disabled in config")
@@ -895,7 +895,7 @@ class VisionService:
             if values:
                 avg = np.mean(values) * 1000  # Convert to ms
                 std = np.std(values) * 1000
-                logger.info(f"  {metric}: {avg:.1f} ± {std:.1f} ms")
+                logger.info(f"  {metric}: {avg:.1f} +/- {std:.1f} ms")
         
         # Calculate FPS
         if self.perf_stats["total_time"]:

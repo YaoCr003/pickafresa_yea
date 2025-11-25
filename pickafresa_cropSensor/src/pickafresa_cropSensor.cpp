@@ -519,7 +519,7 @@ void loop() {
   Serial.print("SH 2: "); Serial.print(substrateHumid2); Serial.print(" ("); Serial.print(substrateHumid2Perc); Serial.print("%) | ");
 
   Serial.print("AH: "); Serial.print(ambientHumid); Serial.print("% | ");
-  Serial.print("AT: "); Serial.print(ambientTemp); Serial.print("°C | ");
+  Serial.print("AT: "); Serial.print(ambientTemp); Serial.print("degC | ");
   Serial.print("LT: "); Serial.print(lecturaLDR); Serial.print(" ("); Serial.print(voltajeLDR); Serial.println(" V)");
 
   
@@ -564,7 +564,7 @@ void loop() {
 
     char debugMsg[128];
     snprintf(debugMsg, sizeof(debugMsg),
-      "Real-time - SH: %d (%d), %d (%d), %d (%d)%% | T: %.2f°C | H: %.2f%% | L: %d (%d)%%",
+      "Real-time - SH: %d (%d), %d (%d), %d (%d)%% | T: %.2fdegC | H: %.2f%% | L: %d (%d)%%",
       substrateHumid0Perc, substrateHumid0,
       substrateHumid1Perc, substrateHumid1,
       substrateHumid2Perc, substrateHumid2,

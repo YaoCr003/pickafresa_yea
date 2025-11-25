@@ -648,7 +648,7 @@ def verify_full_profiles_comprehensive(
     serial: Optional[str] = None,
 ) -> List[FullProfileResult]:
     """
-    Test all combinations of color × depth profiles.
+    Test all combinations of color x depth profiles.
     
     This is the most thorough mode but can be very slow. Use sparingly.
     
