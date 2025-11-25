@@ -21,6 +21,7 @@ realsense_venv_sudo
 *.env
 pickafresa_vision/.env
 pickafresa_vision/**/.env
+pickafresa_yea.venv
 
 # Image files
 pickafresa_vision/images/*
@@ -31,3 +32,15 @@ captures/
 # Large data files
 pickafresa_vision/datasets/*.zip
 pickafresa_vision/datasets/*.tar.gz
+
+# Log files
+*.log
+logs/
+
+# User specific configuration
+pickafresa_vision/.user_config.json
+pickafresa_vision/**/.user_config.json
+
+# Node modules
+/node_modules/ 
+pickafresa_fieldMonitor/node_modules/
