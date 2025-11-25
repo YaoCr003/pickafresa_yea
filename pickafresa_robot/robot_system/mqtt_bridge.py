@@ -212,6 +212,7 @@ class MQTTBridge:
         Example: ["2025-11-23T12:30:45.123456", "INFO", "Robot moving to FOTO position"]
         """
         if not self.is_connected():
+            self._log_debug(f"Cannot publish log - not connected to MQTT broker")
             return
         
         try:
@@ -221,11 +222,12 @@ class MQTTBridge:
                 message
             ]
             
-            self.client.publish(
+            result = self.client.publish(
                 self.topic_log,
                 json.dumps(payload),
                 qos=0  # Fire and forget for logs
             )
+            self._log_debug(f"Published to {self.topic_log}: [{level}] {message[:50]}... (rc={result.rc})")
         
         except Exception as e:
             self._log_error(f"Failed to publish log: {e}")
@@ -242,6 +244,7 @@ class MQTTBridge:
         Example: ["2025-11-23T12:30:45.123456", "RUNNING", "paused=False"]
         """
         if not self.is_connected():
+            self._log_debug(f"Cannot publish status - not connected to MQTT broker")
             return
         
         try:
@@ -256,11 +259,12 @@ class MQTTBridge:
                 extra_str
             ]
             
-            self.client.publish(
+            result = self.client.publish(
                 self.topic_status,
                 json.dumps(payload),
                 qos=1  # At least once delivery for status
             )
+            self._log_debug(f"Published to {self.topic_status}: {status} {extra_str} (rc={result.rc})")
         
         except Exception as e:
             self._log_error(f"Failed to publish status: {e}")
@@ -277,6 +281,7 @@ class MQTTBridge:
         Example: ["2025-11-23T12:30:45.123456", "CAPTURING", "Capturing berry data"]
         """
         if not self.is_connected():
+            self._log_debug(f"Cannot publish sequence - not connected to MQTT broker")
             return
         
         try:
@@ -286,11 +291,12 @@ class MQTTBridge:
                 details if details else ""
             ]
             
-            self.client.publish(
+            result = self.client.publish(
                 self.topic_sequence,
                 json.dumps(payload),
                 qos=1  # At least once delivery
             )
+            self._log_debug(f"Published to {self.topic_sequence}: {sequence_step} - {details} (rc={result.rc})")
         
         except Exception as e:
             self._log_error(f"Failed to publish sequence: {e}")
@@ -306,6 +312,7 @@ class MQTTBridge:
         Example: ["2025-11-23T12:30:45.123456", "CONFIG", "run_mode=manual, speed=normal"]
         """
         if not self.is_connected():
+            self._log_debug(f"Cannot publish settings - not connected to MQTT broker")
             return
         
         try:
@@ -318,11 +325,12 @@ class MQTTBridge:
                 settings_str
             ]
             
-            self.client.publish(
+            result = self.client.publish(
                 self.topic_settings,
                 json.dumps(payload),
                 qos=1  # At least once delivery
             )
+            self._log_debug(f"Published to {self.topic_settings}: {settings_str} (rc={result.rc})")
         
         except Exception as e:
             self._log_error(f"Failed to publish settings: {e}")
@@ -332,10 +340,13 @@ class MQTTBridge:
         if rc == 0:
             self.connected = True
             self._log_info("✓ Connected to MQTT broker")
+            self._log_debug(f"MQTT connection established with broker {self.broker_host}:{self.broker_port}")
             
             # Subscribe to command topic
-            client.subscribe(self.topic_commands)
+            result = client.subscribe(self.topic_commands)
+            print(f"[MQTT] Subscribed to {self.topic_commands} (result={result})")
             self._log_info(f"Subscribed to {self.topic_commands}")
+            self._log_debug(f"Ready to publish to topics: {self.topic_log}, {self.topic_status}, {self.topic_sequence}, {self.topic_settings}")
         else:
             self.connected = False
             self._log_error(f"MQTT connection failed with code {rc}")
@@ -346,8 +357,10 @@ class MQTTBridge:
         
         if rc != 0:
             self._log_warning(f"Unexpected MQTT disconnection (code: {rc})")
+            self._log_debug(f"Disconnect reason code: {rc}")
         else:
             self._log_info("Disconnected from MQTT broker")
+            self._log_debug("Clean disconnection from MQTT broker")
     
     def _on_message(self, client, userdata, msg):
         """
@@ -362,7 +375,10 @@ class MQTTBridge:
             topic = msg.topic
             payload = msg.payload.decode('utf-8')
             
+            # Use print for command reception to ensure visibility
+            print(f"[MQTT] Received message on {topic}: {payload[:100]}...")
             self._log_info(f"Received MQTT message on {topic}")
+            self._log_debug(f"Message payload: {payload[:100]}...")
             
             if topic == self.topic_commands:
                 # Parse command
@@ -371,7 +387,9 @@ class MQTTBridge:
                     command = command_data.get('command')
                     params = command_data.get('params', {})
                     
+                    print(f"[MQTT] Command received: {command} with params: {params}")
                     self._log_info(f"Command received: {command}")
+                    self._log_debug(f"Command parameters: {params}")
                     
                     # Call command callback if configured
                     if self.command_callback:
@@ -386,25 +404,48 @@ class MQTTBridge:
             self._log_error(f"Error processing MQTT message: {e}")
     
     def _log_info(self, message: str):
-        """Log info message."""
+        """Log info message (without MQTT publishing to avoid recursion)."""
         if self.logger:
+            # Temporarily disable mqtt_callback to prevent infinite recursion
+            old_callback = getattr(self.logger, 'mqtt_callback', None)
+            self.logger.mqtt_callback = None
             self.logger.info(message)
+            self.logger.mqtt_callback = old_callback
         else:
             print(f"[INFO] [mqtt_bridge]: {message}")
     
     def _log_warning(self, message: str):
-        """Log warning message."""
+        """Log warning message (without MQTT publishing to avoid recursion)."""
         if self.logger:
+            # Temporarily disable mqtt_callback to prevent infinite recursion
+            old_callback = getattr(self.logger, 'mqtt_callback', None)
+            self.logger.mqtt_callback = None
             self.logger.warn(message)
+            self.logger.mqtt_callback = old_callback
         else:
             print(f"[WARN] [mqtt_bridge]: {message}")
     
     def _log_error(self, message: str):
-        """Log error message."""
+        """Log error message (without MQTT publishing to avoid recursion)."""
         if self.logger:
+            # Temporarily disable mqtt_callback to prevent infinite recursion
+            old_callback = getattr(self.logger, 'mqtt_callback', None)
+            self.logger.mqtt_callback = None
             self.logger.error(message)
+            self.logger.mqtt_callback = old_callback
         else:
             print(f"[ERROR] [mqtt_bridge]: {message}")
+    
+    def _log_debug(self, message: str):
+        """Log debug message (without MQTT publishing to avoid recursion)."""
+        if self.logger:
+            # Temporarily disable mqtt_callback to prevent infinite recursion
+            old_callback = getattr(self.logger, 'mqtt_callback', None)
+            self.logger.mqtt_callback = None
+            self.logger.debug(message)
+            self.logger.mqtt_callback = old_callback
+        else:
+            print(f"[DEBUG] [mqtt_bridge]: {message}")
 
 
 def main():
