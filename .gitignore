@@ -42,7 +42,5 @@ pickafresa_vision/.user_config.json
 pickafresa_vision/**/.user_config.json
 
 # Node modules
-/node_modules/
-pickafresa_vision/node_modules/
-pickafresa_vision/**/node_modules/  
-
+/node_modules/ 
+pickafresa_fieldMonitor/node_modules/
