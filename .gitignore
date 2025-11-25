@@ -40,3 +40,6 @@ logs/
 # User specific configuration
 pickafresa_vision/.user_config.json
 pickafresa_vision/**/.user_config.json
+
+# Node modules
+node_modules/
