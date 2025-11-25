@@ -47,14 +47,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
-# Repository root
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# Repository root (pickafresa_vision/vision_tools/supabase_uploader.py -> parents[2] = repo root)
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # Load environment variables from repo root
 from dotenv import load_dotenv
-load_dotenv(REPO_ROOT / ".env")
+env_path = REPO_ROOT / ".env"
+load_dotenv(env_path)
 
 # Supabase client (optional dependency)
 SUPABASE_AVAILABLE = False
@@ -101,6 +102,8 @@ class SupabaseUploader:
         self.enabled = enabled
         self.client = None
         
+        logger.debug(f"SupabaseUploader.__init__ called with enabled={enabled}")
+        
         if not self.enabled:
             logger.info("Supabase uploader disabled")
             return
@@ -110,22 +113,29 @@ class SupabaseUploader:
             self.enabled = False
             return
         
+        logger.debug(f"SUPABASE_AVAILABLE={SUPABASE_AVAILABLE}")
+        
         # Load credentials from environment or parameters
         self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
         self.supabase_key = supabase_key or os.getenv("SUPABASE_KEY")
         self.bucket_name = bucket_name or os.getenv("SUPABASE_BUCKET", "pickafresa-captures")
         
+        logger.debug(f"Credentials loaded: URL={self.supabase_url}, KEY={'***' if self.supabase_key else None}, BUCKET={self.bucket_name}")
+        
         if not self.supabase_url or not self.supabase_key:
-            logger.warning("Supabase credentials not found in environment variables")
+            logger.warning(f"Supabase credentials not found in environment variables (URL={bool(self.supabase_url)}, KEY={bool(self.supabase_key)})")
             self.enabled = False
             return
         
         # Initialize client
         try:
+            logger.debug("Attempting to create Supabase client...")
             self.client = create_client(self.supabase_url, self.supabase_key)
             logger.info(f"✓ Supabase uploader initialized (bucket: {self.bucket_name})")
         except Exception as e:
             logger.error(f"Failed to initialize Supabase client: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             self.enabled = False
     
     def is_enabled(self) -> bool:
@@ -149,17 +159,21 @@ class SupabaseUploader:
             return False, f"Image file not found: {image_path}", None
         
         try:
-            # Generate unique filename with UUID
-            unique_filename = f"captures/{uuid.uuid4()}.jpg"
+            # Get file extension from actual file
+            file_ext = image_path.suffix  # e.g., ".png" or ".jpg"
+            content_type = "image/png" if file_ext == ".png" else "image/jpeg"
             
-            logger.debug(f"Uploading image: {image_path.name} -> {unique_filename}")
+            # Generate unique filename with UUID and correct extension
+            unique_filename = f"capturas/{uuid.uuid4()}{file_ext}"
+            
+            logger.info(f"Uploading image: {image_path.name} -> {unique_filename}")
             
             # Upload to storage
             with open(image_path, "rb") as f:
                 result = self.client.storage.from_(self.bucket_name).upload(
                     file=f,
                     path=unique_filename,
-                    file_options={"content-type": "image/jpeg"}
+                    file_options={"content-type": content_type}
                 )
             
             logger.debug(f"Upload result: {result}")
