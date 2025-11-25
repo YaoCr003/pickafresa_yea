@@ -45,6 +45,21 @@ except ImportError:
     HAVE_KEYBOARD = False
 
 
+class RobotSafetyError(Exception):
+    """Critical safety error requiring immediate stop."""
+    pass
+
+
+class RobotEmergencyStopError(RobotSafetyError):
+    """Emergency stop activated on robot."""
+    pass
+
+
+class RobotCollisionError(RobotSafetyError):
+    """Collision detected during robot operation."""
+    pass
+
+
 class RoboDKManager:
     """Manager for RoboDK station, robot, and movements."""
     
@@ -81,6 +96,12 @@ class RoboDKManager:
         
         # Created dynamic targets
         self.dynamic_targets: Dict[str, any] = {}
+        
+        # Safety state
+        self.emergency_stop_active: bool = False
+        self.collision_halt_active: bool = False
+        self.last_safety_check: float = 0.0
+        self.safety_check_interval: float = 0.1  # Check every 100ms
         
         self._log_info("RoboDK Manager initialized")
     
@@ -267,6 +288,106 @@ class RoboDKManager:
             return True
         except Exception as e:
             self._log_error(f"Failed to set speed: {e}")
+            return False
+    
+    def check_robot_safety_status(self) -> Tuple[bool, Optional[str]]:
+        """
+        Check robot safety status including emergency stop, protective stop, and errors.
+        
+        For UR robots connected via RoboDK driver:
+        - Checks robot connection status
+        - Detects emergency stop activation
+        - Detects protective stops
+        - Checks for robot errors
+        
+        Returns:
+            Tuple of (is_safe: bool, error_message: Optional[str])
+            is_safe=False means critical safety issue detected
+        """
+        if self.robot is None or self.RDK is None:
+            return (False, "Robot not initialized")
+        
+        try:
+            # For real robot mode, check robot status
+            if self.run_mode.lower() == "real_robot":
+                # Check if robot is connected
+                if not self.robot.Connect():
+                    return (False, "Robot disconnected")
+                
+                # Try to get robot joints - if this fails, robot has an issue
+                try:
+                    joints = self.robot.Joints()
+                    if joints is None:
+                        return (False, "Cannot read robot position - possible safety stop")
+                except Exception as e:
+                    error_str = str(e).lower()
+                    
+                    # Check for emergency stop indicators
+                    if "emergency" in error_str or "e-stop" in error_str or "estop" in error_str:
+                        self.emergency_stop_active = True
+                        return (False, "Emergency stop activated on robot")
+                    
+                    # Check for protective stop
+                    if "protective" in error_str or "safeguard" in error_str:
+                        return (False, "Protective stop activated on robot")
+                    
+                    # Check for communication errors
+                    if "timeout" in error_str or "connection" in error_str:
+                        return (False, f"Robot communication error: {e}")
+                    
+                    # Generic error
+                    return (False, f"Robot error: {e}")
+                
+                # Check robot status flags via RoboDK
+                try:
+                    # Use RoboDK's robot.Busy() to check if robot is executing
+                    # If robot is in error state, this will fail
+                    busy_status = self.robot.Busy()
+                    
+                    # Check for collision detection during movement
+                    if self.RDK.Collisions() > 0:
+                        self.collision_halt_active = True
+                        return (False, "Collision detected by RoboDK")
+                    
+                except Exception as status_error:
+                    return (False, f"Cannot read robot status: {status_error}")
+            
+            # Robot is safe
+            return (True, None)
+            
+        except Exception as e:
+            self._log_error(f"Safety check failed: {e}")
+            return (False, f"Safety check error: {e}")
+    
+    def reset_safety_state(self) -> bool:
+        """
+        Reset safety state flags after manual intervention.
+        
+        Should only be called after:
+        - Emergency stop has been physically reset on teach pendant
+        - Collision has been cleared
+        - Robot is verified to be in safe state
+        
+        Returns:
+            True if reset successful
+        """
+        try:
+            # Verify robot is actually safe before resetting
+            is_safe, error_msg = self.check_robot_safety_status()
+            
+            if not is_safe:
+                self._log_error(f"Cannot reset safety state - robot still unsafe: {error_msg}")
+                return False
+            
+            # Reset flags
+            self.emergency_stop_active = False
+            self.collision_halt_active = False
+            
+            self._log_info("Safety state reset - system ready to resume")
+            return True
+            
+        except Exception as e:
+            self._log_error(f"Failed to reset safety state: {e}")
             return False
     
     def _recover_from_api_error(self) -> bool:
@@ -1795,6 +1916,17 @@ class RoboDKManager:
         try:
             self._log_info(f"Moving to '{target_name}' ({move_type})...")
             
+            # Check safety status before movement
+            is_safe, safety_error = self.check_robot_safety_status()
+            if not is_safe:
+                self._log_error(f"Safety check failed before movement: {safety_error}")
+                if self.emergency_stop_active:
+                    raise RobotEmergencyStopError(f"E-stop active: {safety_error}")
+                elif self.collision_halt_active:
+                    raise RobotCollisionError(f"Collision halt active: {safety_error}")
+                else:
+                    raise RobotSafetyError(f"Safety error: {safety_error}")
+            
             # Get current position for error reporting - with error recovery
             try:
                 current_joints = self.robot.Joints().list()
@@ -1812,12 +1944,39 @@ class RoboDKManager:
             self._log_debug(f"Current joints: {[f'{j:.2f}' for j in current_joints]}")
             self._log_debug(f"Target position: [{target_pos[0]:.1f}, {target_pos[1]:.1f}, {target_pos[2]:.1f}] mm")
             
-            if move_type.lower() == "linear":
-                move_result = self.robot.MoveL(target)
-            else:  # joint
-                move_result = self.robot.MoveJ(target)
+            # Execute movement with proper error handling
+            move_result = None
+            try:
+                if move_type.lower() == "linear":
+                    move_result = self.robot.MoveL(target)
+                else:  # joint
+                    move_result = self.robot.MoveJ(target)
+            except Exception as move_error:
+                # Check if movement was interrupted by safety issue
+                is_safe, safety_error = self.check_robot_safety_status()
+                if not is_safe:
+                    self._log_error(f"Movement interrupted by safety issue: {safety_error}")
+                    if self.emergency_stop_active:
+                        raise RobotEmergencyStopError(f"E-stop during movement: {safety_error}")
+                    elif self.collision_halt_active:
+                        raise RobotCollisionError(f"Collision during movement: {safety_error}")
+                    else:
+                        raise RobotSafetyError(f"Safety error during movement: {safety_error}")
+                # Re-raise original error if not a safety issue
+                raise
             
-            # Check if movement completed
+            # Post-movement safety check
+            is_safe, safety_error = self.check_robot_safety_status()
+            if not is_safe:
+                self._log_error(f"Safety check failed after movement: {safety_error}")
+                if self.emergency_stop_active:
+                    raise RobotEmergencyStopError(f"E-stop after movement: {safety_error}")
+                elif self.collision_halt_active:
+                    raise RobotCollisionError(f"Collision after movement: {safety_error}")
+                else:
+                    raise RobotSafetyError(f"Safety error after movement: {safety_error}")
+            
+            # Check if movement completed successfully
             # RoboDK returns: None or 0 = success, positive integer = error
             if move_result is not None and move_result != 0:
                 self._log_error(f"Movement returned error code: {move_result}")
@@ -1828,6 +1987,8 @@ class RoboDKManager:
                     error_msg = "Target not reachable (IK failed or out of workspace)"
                 elif move_result == 2:
                     error_msg = "Collision detected during movement"
+                    self.collision_halt_active = True
+                    raise RobotCollisionError(f"RoboDK detected collision: {error_msg}")
                 elif move_result == 3:
                     error_msg = "Joint limits exceeded"
                 elif move_result == 4:
@@ -1847,15 +2008,33 @@ class RoboDKManager:
                             self._log_error(f"Colliding items: {items_str}")
                     except:
                         pass
+                    self.collision_halt_active = True
+                    raise RobotCollisionError(f"Collision detected (count: {collision_count}): {error_msg}")
                 
                 return False
             
             self._log_info(f"[OK] Movement complete: {target_name}")
             return True
         
+        except RobotSafetyError as safety_err:
+            # Safety errors should halt immediately and propagate up
+            self._log_error(f"SAFETY ERROR - HALTING OPERATIONS: {safety_err}")
+            self._log_error(f"Target: {target_name}, Move type: {move_type}")
+            # Re-raise to ensure calling code knows this is a safety issue
+            raise
+        
         except Exception as e:
             self._log_error(f"Movement exception: {type(e).__name__}: {e}")
             self._log_error(f"Target: {target_name}, Move type: {move_type}")
+            
+            # Check if movement failure was due to safety issue
+            is_safe, safety_error = self.check_robot_safety_status()
+            if not is_safe:
+                self._log_error(f"Post-error safety check failed: {safety_error}")
+                if self.emergency_stop_active:
+                    raise RobotEmergencyStopError(f"E-stop detected after error: {safety_error}")
+                elif self.collision_halt_active:
+                    raise RobotCollisionError(f"Collision detected after error: {safety_error}")
             
             # Check if this is an API communication error and attempt recovery
             if isinstance(e, (UnicodeDecodeError, struct.error)) or "unpack" in str(e) or "decode" in str(e):
