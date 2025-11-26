@@ -1,3 +1,8 @@
+# !/bin/bash
+# RealSense firmware update script for macOS
+# Uses the rs-fw-update tool to list and update firmware
+# @aldrick-t, 2025
+
 set -euo pipefail
 
 # 1) Free the interfaces macOS likes to grab

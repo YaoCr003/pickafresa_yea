@@ -1,0 +1,135 @@
+# PnP Calculation Configuration
+# Configuration for fruit pose estimation using OpenCV PnP solver
+
+# @aldrick-t, 2025
+
+# Target class filtering for detections
+# Only detections matching these classes will be processed for PnP
+target_classes:
+  - "ripe"
+
+# Camera mounting configuration
+# These parameters account for camera orientation relative to robot TCP
+camera_mounting:
+  pitch_deg: -10.0    # Camera pitch angle (negative = tilted down, positive = tilted up)
+  roll_deg: 0.0       # Camera roll angle (rotation around optical axis)
+  yaw_deg: 0.0        # Camera yaw angle (pan left/right)
+
+# Strawberry physical dimensions (in millimeters)
+# These dimensions are used to construct the object points for PnP
+strawberry_dimensions:
+  width_mm: 32.5   # Diameter (width) of strawberry
+  height_mm: 34.3  # Height of strawberry
+
+# Multi-frame detection averaging
+# Reduces bbox detection uncertainty and x-axis offset through temporal filtering
+multi_frame_averaging:
+  enabled: false                    # Enable multi-frame averaging (recommended for accuracy)
+  num_frames: 10                    # Number of frames to capture and average
+  outlier_rejection: "iqr"          # Method: "iqr", "std_dev", or "ransac"
+  iqr_multiplier: 1.5               # IQR multiplier for outlier detection (1.5 = standard)
+  std_dev_threshold: 2.0            # Standard deviation threshold (if using std_dev method)
+  
+  # Detection tracking across frames
+  tracking:
+    iou_threshold: 0.3              # IoU threshold for matching detections across frames
+    min_frames_visible: 5           # Minimum frames a detection must appear in
+    
+  # Overlapping detection handling
+  overlap_handling:
+    iou_merge_threshold: 0.7        # If IoU > this, merge detections
+    iou_separate_threshold: 0.3     # If IoU < this, treat as separate detections
+    merge_method: "weighted_avg"    # How to merge: "weighted_avg", "highest_conf", "largest_bbox"
+
+# Depth sampling configuration
+depth_sampling:
+  window_size: 5                    # Odd number: size of neighborhood window for depth median
+  min_valid_samples: 3              # Minimum number of valid depth readings required
+  variance_threshold_close: 0.50    # Variance threshold for depth < 0.5m
+  variance_threshold_mid: 0.40      # Variance threshold for 0.5m ≤ depth < 2.0m
+  variance_threshold_far: 0.30      # Variance threshold for depth ≥ 2.0m
+  distance_threshold_close: 0.5     # Distance in meters defining "close range"
+  distance_threshold_mid: 2.0       # Distance in meters defining "mid range"
+  inset_ratio: 0.3                # Inset ratio for edge-avoiding corner sampling (15%)
+  bbox_sample_grid: 10              # Grid size for bbox median sampling (10×10)
+  roi_sample_grid: 20               # Grid size for ROI nearest depth sampling (20×20)
+  
+  # Color-based depth filtering (HSV)
+  # Only samples depth from RED pixels (strawberry surface) to avoid false depth readings
+  # from green leaves or background objects
+  color_filter:
+    enabled: true                   # Enable color filtering (only red pixels)
+    color_space: "hsv"              # Color space for filtering (hsv recommended)
+    mode: "adaptive"                # "adaptive" or "preset"
+    
+    # Adaptive mode: Automatically detect red range from bbox content
+    # More robust to lighting variations, adapts to each berry
+    adaptive:
+      enabled: true                 # Enable adaptive red detection
+      percentile_low: 10            # Lower percentile for hue range (exclude outliers)
+      percentile_high: 90           # Upper percentile for hue range (exclude outliers)
+      saturation_min: 50            # Minimum saturation to consider (avoid pale/white)
+      value_min: 50                 # Minimum brightness to consider (avoid shadows)
+      expansion_factor: 1.2         # Expand detected range by this factor (1.0 = no expansion)
+      min_red_pixels: 20            # Minimum red pixels needed for adaptive mode
+    
+    # Preset mode: Fixed HSV ranges for red strawberries
+    # Fallback when adaptive fails or if adaptive is disabled
+    # Red in HSV wraps around 0/180, so we need two ranges
+    preset:
+      # Range 1: Deep red to red (high hue values)
+      hue_min_1: 0                  # Lower hue bound for red (0° = pure red)
+      hue_max_1: 10                 # Upper hue bound (10° = red-orange)
+      # Range 2: Pink-red to red (low hue values)
+      hue_min_2: 160                # Lower hue bound (160° = magenta-red)
+      hue_max_2: 179                # Upper hue bound (179° = wraps to red)
+      saturation_min: 40            # Minimum saturation (avoid desaturated reds)
+      saturation_max: 255           # Maximum saturation
+      value_min: 40                 # Minimum brightness (avoid very dark pixels)
+      value_max: 255                # Maximum brightness
+  
+  # Depth output strategy (how to determine final depth value)
+  # Options:
+  #   "closest"         - Use minimum depth from ROI (current default, finds fruit surface)
+  #   "center"          - Use depth at center of ROI
+  #   "closest_offset"  - Use minimum depth + 0.5× strawberry width (pushes deeper into fruit)
+  #   "center_offset"   - Use center depth + 0.4× strawberry width (pushes deeper from center)
+  #
+  # NOTE: When enforce_depth_constraint=true (pinhole mode), offsets are applied AFTER PnP
+  #       solving, so they ONLY affect Z without changing X or Y.
+  #       When enforce_depth_constraint=false, offsets affect the PnP initial guess and
+  #       will proportionally scale X, Y, and Z according to pinhole projection.
+  output_strategy: "closest_offset"        # Depth measurement strategy
+  closest_offset_multiplier: 0.7    # Multiplier for closest_offset (0.5 = half width)
+  center_offset_multiplier: 0.7     # Multiplier for center_offset (0.4 = 40% of width)
+
+# PnP solver configuration
+pnp_solver:
+  method: "SOLVEPNP_ITERATIVE"      # Options: SOLVEPNP_ITERATIVE, SOLVEPNP_P3P, SOLVEPNP_EPNP, SOLVEPNP_IPPE
+  use_ransac: false                 # Whether to use RANSAC for outlier rejection
+  ransac_reprojection_error: 8.0    # RANSAC reprojection error threshold (pixels)
+  ransac_confidence: 0.99           # RANSAC confidence level
+  ransac_iterations: 100            # Maximum RANSAC iterations
+  refinement_iterations: 10         # Refinement iterations for iterative method
+  use_dual_plane: false             # Use 8-point dual-plane model (false = 4-point, recommended)
+  
+  # Depth constraint configuration
+  use_depth_constraint: true        # Use measured depth as initial guess for PnP solver
+  enforce_depth_constraint: true   # DISABLED: Let PnP solve freely using geometric constraints
+                                    # Setting to true forces Z to measured depth (pinhole behavior)
+
+# Validation thresholds
+validation:
+  min_confidence: 0.20             # Minimum detection confidence to process
+  max_depth_meters: 3.0             # Maximum valid depth reading (meters)
+  min_depth_meters: 0.190           # Minimum valid depth reading (meters) - D435 spec
+  min_bbox_area: 100                # Minimum bounding box area (pixels)
+  max_bbox_area: 250000             # Maximum bounding box area (pixels)
+
+# Output configuration
+output:
+  save_raw_images: true             # Save raw RGB frames
+  save_depth_images: false          # Save colorized depth frames
+  save_annotated_images: true       # Save images with bounding boxes and pose info
+  output_directory: "captures"      # Relative to pickafresa_vision/
+  coordinate_precision: 6           # Decimal places for coordinate values in JSON

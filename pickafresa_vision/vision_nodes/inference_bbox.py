@@ -46,6 +46,8 @@ Example
 >>> # Using display=True with infer_video_stream to show video with detections
 >>> for frame_idx, dets, bboxes, frame in infer_video_stream(model, 0, conf=0.3, display=True):
 >>>     pass
+
+# @aldrick-t, 2025
 """
 
 from __future__ import annotations

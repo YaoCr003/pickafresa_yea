@@ -2,6 +2,8 @@
 """
 YOLO Benchmark Script
 Benchmarks YOLO model performance including inference speed, FPS, and resource usage.
+
+@aldrick-t, 2025
 """
 
 import time

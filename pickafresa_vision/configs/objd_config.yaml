@@ -1,0 +1,24 @@
+# Object Detection Configuration
+# Configuration for YOLOv11 inference and camera settings
+# Team YEA, 2025
+
+# Model configuration
+model_path: pickafresa_vision/models/18k_oct19_yolo11_70x.pt
+dataset_path: pickafresa_vision/datasets/yea_strawberry_class_2dbbox_aggr.v2-18k_3class_2dmixed_640p.yolov11
+
+# Inference parameters
+inference:
+  confidence: 0.55          # Confidence threshold for detections [0.0-1.0]
+  iou: 0.45                 # IoU threshold for NMS
+  max_detections: 5       # Maximum number of detections per image
+
+# Camera intrinsics (for offline use or fallback)
+# Note: Live capture uses realsense_capture_config.yaml
+intrinsics_path: pickafresa_vision/camera_calibration/calib_cg_21x_20251020_122431.yaml
+
+# Camera stream settings (for interactive tools)
+camera:
+  resolution:
+    - 640
+    - 480
+  fps: 30

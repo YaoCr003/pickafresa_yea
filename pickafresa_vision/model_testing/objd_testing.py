@@ -24,7 +24,7 @@ Keyboard Controls:
     - - Decrease confidence threshold by 0.05
     r - Reset to default settings
 
-Team YEA, 2025
+@aldrick-t, 2025
 """
 
 from __future__ import annotations
@@ -50,6 +50,28 @@ except ImportError:
     HAVE_REALSENSE = False
     print("Warning: pyrealsense2 not available. RealSense cameras will not be accessible.")
 
+# Import profile verification tools for automatic configuration
+if HAVE_REALSENSE:
+    try:
+        from pickafresa_vision.realsense_tools.realsense_verify_color import (
+            get_best_color_profile,
+            get_camera_serial,
+        )
+        from pickafresa_vision.realsense_tools.realsense_verify_depth import (
+            get_best_depth_profile,
+        )
+        from pickafresa_vision.realsense_tools.realsense_verify_full import (
+            get_best_full_profile,
+            get_working_full_profiles,
+            load_working_profiles,
+        )
+        HAVE_VERIFICATION = True
+    except ImportError:
+        HAVE_VERIFICATION = False
+        print("Warning: Could not import verification tools. Using default resolution.")
+else:
+    HAVE_VERIFICATION = False
+
 try:
     import yaml
     HAVE_YAML = True
@@ -64,6 +86,21 @@ from pickafresa_vision.vision_tools.config_store import (
     get_namespace,
     update_namespace,
 )
+
+
+def _load_objd_config_defaults() -> dict:
+    """Load default values from objd_config.yaml if available."""
+    config_path = REPO_ROOT / "pickafresa_vision" / "configs" / "objd_config.yaml"
+    
+    if not HAVE_YAML or not config_path.exists():
+        return {}
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
 
 # Configuration namespace for this tool
 CONFIG_NAMESPACE = "objd_testing"
@@ -88,6 +125,15 @@ class TestConfig:
     iou_threshold: float = 0.45
     resolution: Tuple[int, int] = (640, 480)
     fps: int = 15
+    # Depth overlay rendering on color window
+    depth_overlay_enabled: bool = False
+    depth_overlay_alpha: float = 0.0  # 0.0 (no overlay) .. 1.0 (full depth colormap)
+    # Persisted user preferences for RealSense fps selection (global)
+    preferred_color_fps: Optional[int] = None
+    preferred_depth_fps: Optional[int] = None
+    # Persisted preferred full profile selection when depth is enabled
+    # ((color_w, color_h, color_fps), (depth_w, depth_h, depth_fps))
+    preferred_full_profile: Optional[Tuple[Tuple[int, int, int], Tuple[int, int, int]]] = None
 
 
 class FPSCounter:
@@ -109,82 +155,461 @@ class FPSCounter:
 
 
 class RealSenseCamera:
-    """Wrapper for RealSense camera with depth support."""
-    
-    def __init__(self, resolution: Tuple[int, int] = (640, 480), fps: int = 30):
+    """Wrapper for RealSense camera with depth support.
+
+    Supports color-only mode or combined color+depth with potentially different
+    resolutions and FPS for each stream.
+    """
+
+    def __init__(
+        self,
+        resolution: Tuple[int, int] = (640, 480),
+        fps: int = 30,
+        auto_detect: bool = True,
+        enable_depth: bool = True,
+    ):
         if not HAVE_REALSENSE:
             raise RuntimeError("pyrealsense2 is required for RealSense cameras")
-        
+
+        # Color stream settings (primary)
         self.resolution = resolution
         self.fps = fps
+        self.auto_detect = auto_detect
+        self.enable_depth = enable_depth
+
+        # Allow distinct depth settings
+        self.depth_resolution: Tuple[int, int] = resolution
+        self.depth_fps: int = fps
+
         self.pipeline: Optional[rs.pipeline] = None
         self.align: Optional[rs.align] = None
-        self.depth_scale: float = 0.0
-        self._filters: List = []
-    
-    def start(self):
-        """Initialize and start the RealSense pipeline."""
-        width, height = self.resolution
-        self.pipeline = rs.pipeline()
-        config = rs.config()
-        config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, self.fps)
-        config.enable_stream(rs.stream.depth, width, height, rs.format.z16, self.fps)
-        
-        profile = self.pipeline.start(config)
-        depth_sensor = profile.get_device().first_depth_sensor()
-        self.depth_scale = depth_sensor.get_depth_scale()
-        self.align = rs.align(rs.stream.color)
-        
-        # Setup depth filtering pipeline
+        self.depth_scale = 0.0
+        self._filters = []
+        # Selected full profile pair if chosen from cache
+        self.selected_full_profile = None
+
+    def _get_device_by_serial(self, serial: Optional[str]) -> Optional[rs.device]:
         try:
-            self._filters = [
-                rs.disparity_transform(True),
-                rs.spatial_filter(),
-                rs.temporal_filter(),
-                rs.disparity_transform(False),
-                rs.hole_filling_filter(),
-            ]
-            # Tune filters
-            spatial: rs.spatial_filter = self._filters[1]
-            spatial.set_option(rs.option.holes_fill, 3)
-            temporal: rs.temporal_filter = self._filters[2]
-            temporal.set_option(rs.option.alpha, 0.5)
+            ctx = rs.context()
+            devices = ctx.query_devices()
+            if len(devices) == 0:
+                return None
+            if not serial:
+                return devices[0]
+            for d in devices:
+                try:
+                    if d.get_info(rs.camera_info.serial_number) == serial:
+                        return d
+                except Exception:
+                    continue
+            return devices[0]
         except Exception:
-            self._filters = []
-    
-    def read(self) -> Tuple[bool, np.ndarray, Optional[rs.depth_frame]]:
-        """Read aligned color and depth frames."""
-        if not self.pipeline or not self.align:
-            return False, np.zeros((480, 640, 3), dtype=np.uint8), None
-        
+            return None
+
+    def _enumerate_fps_options(
+        self,
+        device: Optional[rs.device],
+        color_res: Tuple[int, int],
+        depth_res: Optional[Tuple[int, int]],
+        enable_depth: bool,
+    ) -> Tuple[List[int], List[int]]:
+        """Enumerate available fps options for the given resolutions.
+
+        Returns (color_fps_options, depth_fps_options). If depth disabled, depth list may be [].
+        """
+        color_set: set[int] = set()
+        depth_set: set[int] = set()
+        if not device:
+            return sorted(color_set), sorted(depth_set)
         try:
-            frames = self.pipeline.wait_for_frames(timeout_ms=5000)
-            aligned_frames = self.align.process(frames)
-            depth_frame = aligned_frames.get_depth_frame()
-            color_frame = aligned_frames.get_color_frame()
-            
-            if not depth_frame or not color_frame:
-                return False, np.zeros((480, 640, 3), dtype=np.uint8), None
-            
-            # Apply depth filtering
+            for sensor in device.sensors:
+                try:
+                    for prof in sensor.get_stream_profiles():
+                        try:
+                            vprof = prof.as_video_stream_profile()
+                        except Exception:
+                            continue
+                        stype = vprof.stream_type()
+                        fmt = vprof.format()
+                        w, h = vprof.width(), vprof.height()
+                        fps = vprof.fps()
+                        if stype == rs.stream.color and fmt == rs.format.bgr8 and (w, h) == color_res:
+                            color_set.add(int(fps))
+                        if enable_depth and depth_res and stype == rs.stream.depth and fmt == rs.format.z16 and (w, h) == depth_res:
+                            depth_set.add(int(fps))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return sorted(color_set), sorted(depth_set)
+
+    def _prompt_select_fps_color(self, options: List[int], saved: Optional[int]) -> Optional[int]:
+        if not options:
+            return None
+        # If saved preference exists and is available, use it automatically
+        if saved and saved in options:
+            print(f"Using saved color fps preference: {saved}")
+            return saved
+        if len(options) == 1:
+            print(f"Only one color fps available: {options[0]}")
+            return options[0]
+        print("\n=== Select Color FPS ===")
+        for i, f in enumerate(options, 1):
+            print(f"{i}. {f} fps")
+        while True:
+            choice = input(f"Select color fps (1-{len(options)}) or 'q' to cancel: ").strip().lower()
+            if choice == 'q':
+                return None
             try:
-                f = depth_frame
-                for flt in self._filters:
-                    f = flt.process(f)
-                depth_frame = f.as_depth_frame()
+                idx = int(choice) - 1
+                if 0 <= idx < len(options):
+                    return options[idx]
             except Exception:
                 pass
-            
-            color_image = np.asanyarray(color_frame.get_data())
-            return True, color_image, depth_frame
+            print("Please enter a valid option.")
+
+    def _prompt_select_fps_pair(
+        self,
+        color_options: List[int],
+        depth_options: List[int],
+        saved_color: Optional[int],
+        saved_depth: Optional[int],
+        color_res: Tuple[int, int],
+        depth_res: Tuple[int, int],
+    ) -> Tuple[Optional[int], Optional[int]]:
+        # If both saved exist and are available, use them
+        if saved_color in color_options and saved_depth in depth_options:
+            print(f"Using saved fps preferences: Color {saved_color}, Depth {saved_depth}")
+            return saved_color, saved_depth
+        # If only single options, pick them
+        if len(color_options) == 1 and len(depth_options) == 1:
+            print(f"Only one fps pair available: Color {color_options[0]}, Depth {depth_options[0]}")
+            return color_options[0], depth_options[0]
+
+        # Build cartesian pairs for user selection
+        pairs: List[Tuple[int, int]] = [(c, d) for c in color_options for d in depth_options]
+        print("\n=== Select FPS Pair (Color | Depth) ===")
+        for i, (c, d) in enumerate(pairs, 1):
+            print(f"{i}. Color {color_res[0]}x{color_res[1]} @ {c} | Depth {depth_res[0]}x{depth_res[1]} @ {d}")
+        while True:
+            choice = input(f"Select pair (1-{len(pairs)}) or 'q' to cancel: ").strip().lower()
+            if choice == 'q':
+                return None, None
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(pairs):
+                    return pairs[idx]
+            except Exception:
+                pass
+            print("Please enter a valid option.")
+
+    def _prompt_select_cached_full_profile(
+        self,
+        cached: List[Tuple[Tuple[int, int, int], Tuple[int, int, int]]],
+        saved_pref: Optional[Tuple[Tuple[int, int, int], Tuple[int, int, int]]]
+    ) -> Optional[Tuple[Tuple[int, int, int], Tuple[int, int, int]]]:
+        """Prompt user to select a full (color+depth) profile from cache.
+
+        If saved_pref is present and matches one of the cached entries, use it automatically.
+        """
+        if not cached:
+            return None
+        # Auto-use saved preference when available
+        if saved_pref and saved_pref in cached:
+            c, d = saved_pref
+            print(
+                f"Using saved full profile preference: Color {c[0]}x{c[1]}@{c[2]} | Depth {d[0]}x{d[1]}@{d[2]}"
+            )
+            return saved_pref
+
+        # If differing fps pairs exist, prompt; otherwise just use the first
+        fps_pairs = {(c[2], d[2]) for c, d in cached}
+        if len(fps_pairs) <= 1 and len(cached) == 1:
+            return cached[0]
+
+        print("\n=== Select Cached Full Profile (Color | Depth) ===")
+        for i, (c, d) in enumerate(cached, 1):
+            print(f"{i}. Color {c[0]}x{c[1]} @ {c[2]} | Depth {d[0]}x{d[1]} @ {d[2]}")
+        while True:
+            choice = input(f"Select profile (1-{len(cached)}) or 'q' to cancel: ").strip().lower()
+            if choice == 'q':
+                return None
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(cached):
+                    return cached[idx]
+            except Exception:
+                pass
+            print("Please enter a valid option.")
+
+    def start(self):
+        """Initialize and start the RealSense pipeline."""
+        color_w, color_h = self.resolution
+        color_fps = self.fps
+
+        # Auto-detect profile(s) if enabled
+        if self.auto_detect and HAVE_VERIFICATION:
+            print("\n=== Auto-detecting camera profiles ===")
+            try:
+                if self.enable_depth:
+                    # Prefer cached full profiles; prompt user when fps differ
+                    try:
+                        serial = get_camera_serial()
+                    except Exception:
+                        serial = None
+
+                    cached_profiles = load_working_profiles(serial) if serial else None
+                    saved_cfg = load_previous_config()
+                    saved_full_pref = saved_cfg.preferred_full_profile if saved_cfg else None
+
+                    selected: Optional[Tuple[Tuple[int, int, int], Tuple[int, int, int]]] = None
+                    if cached_profiles:
+                        selected = self._prompt_select_cached_full_profile(cached_profiles, saved_full_pref)
+
+                    if not selected:
+                        # Fall back to picking a full profile (independent mode to widen options)
+                        try:
+                            pair = get_best_full_profile(mode="independent", verbose=True, use_cache=True, validate_cached=False)
+                        except Exception as e:
+                            print(f"Full verification unavailable ({e}), falling back to separate checks...")
+                            pair = None
+                        selected = pair
+
+                    if selected:
+                        (color_w, color_h, color_fps), (depth_w, depth_h, depth_fps) = selected
+                        print(
+                            f"[OK] Selected: Color {color_w}x{color_h}@{color_fps} | "
+                            f"Depth {depth_w}x{depth_h}@{depth_fps}"
+                        )
+                        self.resolution = (color_w, color_h)
+                        self.fps = color_fps
+                        self.depth_resolution = (depth_w, depth_h)
+                        self.depth_fps = depth_fps
+                        self.selected_full_profile = selected
+                        # Persist selected full profile globally for RealSense runs
+                        try:
+                            cfg = load_config()
+                            update_namespace(cfg, CONFIG_NAMESPACE, {
+                                "preferred_full_profile": {
+                                    "color": [color_w, color_h, color_fps],
+                                    "depth": [depth_w, depth_h, depth_fps],
+                                }
+                            })
+                        except Exception:
+                            pass
+                    else:
+                        # Fallback: pick best color and best depth independently
+                        print("Detecting best color profile...")
+                        best_color = get_best_color_profile(verbose=True, use_cache=True, validate_cached=False)
+                        if best_color:
+                            color_w, color_h, color_fps = best_color
+                            print(f"[OK] Color: {color_w}x{color_h}@{color_fps}")
+                            self.resolution = (color_w, color_h)
+                            self.fps = color_fps
+
+                        print("Detecting best depth profile...")
+                        best_depth = get_best_depth_profile(verbose=True, use_cache=True, validate_cached=False)
+                        if best_depth:
+                            dw, dh, dfps = best_depth
+                            print(f"[OK] Depth: {dw}x{dh}@{dfps}")
+                            self.depth_resolution = (dw, dh)
+                            self.depth_fps = dfps
+                else:
+                    # Only color stream needed
+                    print("Detecting best color profile (depth disabled)...")
+                    best_color = get_best_color_profile(verbose=True, use_cache=True, validate_cached=False)
+                    if best_color:
+                        color_w, color_h, color_fps = best_color
+                        print(f"[OK] Selected color profile: {color_w}x{color_h}@{color_fps}fps")
+                        self.resolution = (color_w, color_h)
+                        self.fps = color_fps
+            except Exception as e:
+                print(
+                    f"Warning: Auto-detection failed ({e}), using default "
+                    f"{color_w}x{color_h}@{color_fps}fps"
+                )
+
+        # At this point we have chosen resolutions; if no full profile was explicitly selected,
+        # and multiple fps options exist, prompt user for fps selection.
+        if self.selected_full_profile is None:
+            try:
+                device_serial = get_camera_serial() if HAVE_VERIFICATION else None
+            except Exception:
+                device_serial = None
+            device = self._get_device_by_serial(device_serial)
+
+            # Enumerate available fps for these resolutions
+            depth_res_tuple: Optional[Tuple[int, int]] = self.depth_resolution if self.enable_depth else None
+            color_fps_opts, depth_fps_opts = self._enumerate_fps_options(device, (color_w, color_h), depth_res_tuple, self.enable_depth)
+
+            # Load saved preferences if any
+            saved_cfg = load_previous_config()
+            saved_color_pref = saved_cfg.preferred_color_fps if saved_cfg else None
+            saved_depth_pref = saved_cfg.preferred_depth_fps if saved_cfg else None
+
+            if self.enable_depth:
+                if color_fps_opts or depth_fps_opts:
+                    sel_color, sel_depth = self._prompt_select_fps_pair(
+                        color_fps_opts or [color_fps],
+                        depth_fps_opts or [self.depth_fps],
+                        saved_color_pref,
+                        saved_depth_pref,
+                        (color_w, color_h),
+                        self.depth_resolution,
+                    )
+                    if sel_color:
+                        color_fps = sel_color
+                        self.fps = sel_color
+                    if sel_depth:
+                        self.depth_fps = sel_depth
+            else:
+                if color_fps_opts:
+                    sel_color = self._prompt_select_fps_color(color_fps_opts, saved_color_pref)
+                    if sel_color:
+                        color_fps = sel_color
+                        self.fps = sel_color
+
+        # Small settle delay after any prior verification start/stop cycles
+        time.sleep(0.4)
+
+        self.pipeline = rs.pipeline()
+        config = rs.config()
+        # Bind to the detected device to prevent librealsense from probing other sensors
+        try:
+            device_serial = get_camera_serial() if HAVE_VERIFICATION else None
+            if device_serial:
+                config.enable_device(device_serial)
+        except Exception:
+            pass
+        config.enable_stream(rs.stream.color, color_w, color_h, rs.format.bgr8, color_fps)
+
+        if self.enable_depth:
+            depth_w, depth_h = self.depth_resolution
+            depth_fps = self.depth_fps
+            config.enable_stream(rs.stream.depth, depth_w, depth_h, rs.format.z16, depth_fps)
+
+        # Try to start; if it fails (e.g., invalid fps pair), re-prompt if possible
+        start_attempts = 0
+        while True:
+            try:
+                profile = self.pipeline.start(config)
+                break
+            except Exception as e:
+                start_attempts += 1
+                print(f"Failed to start pipeline with selected fps (attempt {start_attempts}): {e}")
+                if start_attempts >= 3:
+                    raise
+                # Re-prompt available fps options and update config
+                color_fps_opts, depth_fps_opts = self._enumerate_fps_options(device, (color_w, color_h), self.depth_resolution if self.enable_depth else None, self.enable_depth)
+                if self.enable_depth:
+                    sel_color, sel_depth = self._prompt_select_fps_pair(
+                        color_fps_opts or [color_fps],
+                        depth_fps_opts or [self.depth_fps],
+                        None,
+                        None,
+                        (color_w, color_h),
+                        self.depth_resolution,
+                    )
+                    if sel_color:
+                        color_fps = sel_color
+                        self.fps = sel_color
+                    if sel_depth:
+                        self.depth_fps = sel_depth
+                    # Reconfigure streams with new fps
+                    config = rs.config()
+                    try:
+                        device_serial = get_camera_serial() if HAVE_VERIFICATION else None
+                        if device_serial:
+                            config.enable_device(device_serial)
+                    except Exception:
+                        pass
+                    config.enable_stream(rs.stream.color, color_w, color_h, rs.format.bgr8, color_fps)
+                    dw, dh = self.depth_resolution
+                    config.enable_stream(rs.stream.depth, dw, dh, rs.format.z16, self.depth_fps)
+                else:
+                    sel_color = self._prompt_select_fps_color(color_fps_opts or [color_fps], None)
+                    if sel_color:
+                        color_fps = sel_color
+                        self.fps = sel_color
+                        config = rs.config()
+                        try:
+                            device_serial = get_camera_serial() if HAVE_VERIFICATION else None
+                            if device_serial:
+                                config.enable_device(device_serial)
+                        except Exception:
+                            pass
+                        config.enable_stream(rs.stream.color, color_w, color_h, rs.format.bgr8, color_fps)
+
+        if self.enable_depth:
+            depth_sensor = profile.get_device().first_depth_sensor()
+            self.depth_scale = depth_sensor.get_depth_scale()
+            self.align = rs.align(rs.stream.color)
+
+            # Setup depth filtering pipeline
+            try:
+                self._filters = [
+                    rs.disparity_transform(True),
+                    rs.spatial_filter(),
+                    rs.temporal_filter(),
+                    rs.disparity_transform(False),
+                    rs.hole_filling_filter(),
+                ]
+                # Tune filters
+                spatial: rs.spatial_filter = self._filters[1]
+                spatial.set_option(rs.option.holes_fill, 3)
+                temporal: rs.temporal_filter = self._filters[2]
+                temporal.set_option(rs.option.alpha, 0.5)
+            except Exception:
+                self._filters = []
+
+    def read(self) -> Tuple[bool, np.ndarray, Optional[rs.depth_frame]]:
+        """Read aligned color and depth frames."""
+        if not self.pipeline:
+            return False, np.zeros((480, 640, 3), dtype=np.uint8), None
+
+        try:
+            frames = self.pipeline.wait_for_frames(timeout_ms=5000)
+
+            if self.enable_depth and self.align:
+                aligned_frames = self.align.process(frames)
+                depth_frame = aligned_frames.get_depth_frame()
+                color_frame = aligned_frames.get_color_frame()
+
+                if not depth_frame or not color_frame:
+                    return False, np.zeros((480, 640, 3), dtype=np.uint8), None
+
+                # Apply depth filtering
+                try:
+                    f = depth_frame
+                    for flt in self._filters:
+                        f = flt.process(f)
+                    depth_frame = f.as_depth_frame()
+                except Exception:
+                    pass
+
+                color_image = np.asanyarray(color_frame.get_data())
+                return True, color_image, depth_frame
+            else:
+                # Color only mode
+                color_frame = frames.get_color_frame()
+                if not color_frame:
+                    return False, np.zeros((480, 640, 3), dtype=np.uint8), None
+
+                color_image = np.asanyarray(color_frame.get_data())
+                return True, color_image, None
         except Exception as e:
             print(f"Error reading RealSense frames: {e}")
             return False, np.zeros((480, 640, 3), dtype=np.uint8), None
-    
+
     def stop(self):
         """Stop the RealSense pipeline."""
         if self.pipeline:
-            self.pipeline.stop()
+            try:
+                self.pipeline.stop()
+                # Give hardware a moment to power down cleanly (macOS/librealsense quirk)
+                time.sleep(0.3)
+            except Exception:
+                pass
         self.pipeline = None
         self.align = None
 
@@ -295,7 +720,9 @@ def draw_overlay_stats(
     camera_info: str,
     conf_threshold: float,
     resolution: Tuple[int, int],
-    paused: bool = False
+    paused: bool = False,
+    depth_overlay_enabled: bool = False,
+    depth_overlay_alpha: float = 0.0,
 ) -> np.ndarray:
     """Draw statistics overlay on the frame."""
     overlay = frame.copy()
@@ -319,6 +746,8 @@ def draw_overlay_stats(
         f"Resolution: {resolution[0]}x{resolution[1]}",
         f"FPS: {fps:.1f}",
         f"Conf Threshold: {conf_threshold:.2f}",
+        (f"Depth Overlay: {'On' if depth_overlay_enabled else 'Off'}"
+         + (f" (alpha={depth_overlay_alpha:.2f})" if depth_overlay_enabled else "")),
         f"Total Detections: {total_detections}",
         "",
         "Per-class counts:",
@@ -335,12 +764,13 @@ def draw_overlay_stats(
         cv2.putText(frame, line, (10, y), font, font_scale, color, thickness, cv2.LINE_AA)
     
     # Draw controls at bottom
-    controls_y = frame.shape[0] - 60
+    controls_y = frame.shape[0] - 75
     cv2.rectangle(frame, (5, controls_y - 5), (frame.shape[1] - 5, frame.shape[0] - 5), (0, 0, 0), -1)
     cv2.addWeighted(frame, 0.6, overlay, 0.4, 0, frame)
     
     control_text = [
         "Controls: [Q]uit | [S]ave | [P]ause | [+/-] Conf | [R]eset",
+        "Overlay: [O] Toggle | [ ] Increase alpha | [ [ ] Decrease alpha",
     ]
     
     for i, line in enumerate(control_text):
@@ -457,7 +887,10 @@ def prompt_dataset_selection(datasets_dir: Path) -> Optional[Path]:
 def prompt_camera_selection() -> Tuple[Optional[str], Optional[int]]:
     """Prompt user to select camera type and index."""
     print("\n=== Camera Selection ===")
-    print("1. RealSense Camera" + (" [Available]" if HAVE_REALSENSE else " [NOT AVAILABLE]"))
+    realsense_status = " [Available]" if HAVE_REALSENSE else " [NOT AVAILABLE]"
+    if HAVE_REALSENSE and HAVE_VERIFICATION:
+        realsense_status += " + Auto-detect"
+    print("1. RealSense Camera" + realsense_status)
     print("2. OpenCV Camera (USB/Built-in)")
     
     while True:
@@ -500,6 +933,18 @@ def load_previous_config() -> Optional[TestConfig]:
         return None
     
     try:
+        # Parse preferred full profile if present
+        pfp = ns.get("preferred_full_profile")
+        preferred_full_profile = None
+        try:
+            if pfp and isinstance(pfp, dict) and "color" in pfp and "depth" in pfp:
+                c = tuple(pfp.get("color", []))
+                d = tuple(pfp.get("depth", []))
+                if len(c) == 3 and len(d) == 3:
+                    preferred_full_profile = (tuple(int(x) for x in c), tuple(int(x) for x in d))  # type: ignore
+        except Exception:
+            preferred_full_profile = None
+
         return TestConfig(
             model_path=ns.get("model_path", ""),
             dataset_path=ns.get("dataset_path", ""),
@@ -510,6 +955,11 @@ def load_previous_config() -> Optional[TestConfig]:
             iou_threshold=ns.get("iou_threshold", 0.45),
             resolution=tuple(ns.get("resolution", [640, 480])),
             fps=ns.get("fps", 30),
+            depth_overlay_enabled=ns.get("depth_overlay_enabled", False),
+            depth_overlay_alpha=float(ns.get("depth_overlay_alpha", 0.0)),
+            preferred_color_fps=ns.get("preferred_color_fps"),
+            preferred_depth_fps=ns.get("preferred_depth_fps"),
+            preferred_full_profile=preferred_full_profile,
         )
     except Exception:
         return None
@@ -528,6 +978,17 @@ def save_current_config(test_config: TestConfig):
         "iou_threshold": test_config.iou_threshold,
         "resolution": list(test_config.resolution),
         "fps": test_config.fps,
+        "depth_overlay_enabled": test_config.depth_overlay_enabled,
+        "depth_overlay_alpha": float(test_config.depth_overlay_alpha),
+        "preferred_color_fps": test_config.preferred_color_fps,
+        "preferred_depth_fps": test_config.preferred_depth_fps,
+        "preferred_full_profile": (
+            {
+                "color": list(test_config.preferred_full_profile[0]),
+                "depth": list(test_config.preferred_full_profile[1]),
+            }
+            if test_config.preferred_full_profile else None
+        ),
     })
 
 
@@ -535,6 +996,9 @@ def interactive_setup() -> Optional[TestConfig]:
     """Interactive configuration setup with option to use previous settings."""
     models_dir = REPO_ROOT / "pickafresa_vision" / "models"
     datasets_dir = REPO_ROOT / "pickafresa_vision" / "datasets"
+    
+    # Load defaults from objd_config.yaml
+    objd_defaults = _load_objd_config_defaults()
     
     # Check for previous config
     prev_config = load_previous_config()
@@ -553,8 +1017,22 @@ def interactive_setup() -> Optional[TestConfig]:
     # New configuration
     print("\n=== New Configuration ===")
     
-    # Model selection
-    model_path = prompt_model_selection(models_dir)
+    # Model selection (with default from objd_config.yaml)
+    default_model = objd_defaults.get("model_path")
+    if default_model:
+        default_model_path = REPO_ROOT / default_model
+        if default_model_path.exists():
+            print(f"\nDefault model from config: {default_model_path.name}")
+            use_default = input("Use this model? (y/n, default=y): ").strip().lower()
+            if use_default != 'n':
+                model_path = default_model_path
+            else:
+                model_path = prompt_model_selection(models_dir)
+        else:
+            model_path = prompt_model_selection(models_dir)
+    else:
+        model_path = prompt_model_selection(models_dir)
+    
     if model_path is None:
         return None
     
@@ -571,12 +1049,26 @@ def interactive_setup() -> Optional[TestConfig]:
     # Depth mode
     enable_depth = prompt_depth_mode(camera_type)
     
+    # Get default inference parameters from config
+    inference_defaults = objd_defaults.get("inference", {})
+    default_conf = inference_defaults.get("confidence", 0.25)
+    default_iou = inference_defaults.get("iou", 0.45)
+    
+    # Get camera defaults from config
+    camera_defaults = objd_defaults.get("camera", {})
+    default_resolution = tuple(camera_defaults.get("resolution", [640, 480]))
+    default_fps = camera_defaults.get("fps", 30)
+    
     return TestConfig(
         model_path=str(model_path),
         dataset_path=str(dataset_path),
         camera_type=camera_type,
         camera_index=camera_index,
         enable_depth=enable_depth,
+        conf_threshold=default_conf,
+        iou_threshold=default_iou,
+        resolution=default_resolution,
+        fps=default_fps,
     )
 
 
@@ -613,12 +1105,30 @@ def main():
     print(f"\nInitializing camera: {config.camera_type}")
     try:
         if config.camera_type == "realsense":
-            camera = RealSenseCamera(resolution=config.resolution, fps=config.fps)
+            # Enable auto-detection for RealSense cameras
+                camera = RealSenseCamera(
+                    resolution=config.resolution, 
+                    fps=config.fps, 
+                    auto_detect=True,
+                    enable_depth=config.enable_depth
+                )
         else:
             camera = OpenCVCamera(camera_index=config.camera_index, resolution=config.resolution)
         
         camera.start()
         print("Camera initialized successfully!")
+        
+        # Update config with actual resolution/fps (may have changed with auto-detection)
+        if config.camera_type == "realsense":
+            config.resolution = camera.resolution
+            config.fps = camera.fps
+            # Persist user fps preferences globally for RealSense runs
+            config.preferred_color_fps = getattr(camera, 'fps', None)
+            config.preferred_depth_fps = getattr(camera, 'depth_fps', None) if config.enable_depth else None
+            # If a full profile pair was selected, persist it in the config object too
+            if hasattr(camera, 'selected_full_profile') and camera.selected_full_profile:
+                config.preferred_full_profile = camera.selected_full_profile
+            save_current_config(config)
     except Exception as e:
         print(f"Error initializing camera: {e}")
         return
@@ -636,9 +1146,20 @@ def main():
     print("Press 'q' to quit, 's' to save frame, 'p' to pause")
     print("=" * 60 + "\n")
     
-    window_name = "YOLOv11 Object Detection Testing"
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    window_name_color = "YOLOv11 - Color (Detections)"
+    window_name_depth = "YOLOv11 - Depth"
+    cv2.namedWindow(window_name_color, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(window_name_depth, cv2.WINDOW_NORMAL)
     
+    # Track last displayed frames for paused mode
+    last_color_frame: Optional[np.ndarray] = None
+    last_depth_frame: Optional[np.ndarray] = None
+    last_fps: float = 0.0
+    last_detections: List = []
+    last_bboxes: List[Tuple[float, float, float, float]] = []
+    last_class_counts: Dict[str, int] = {}
+    camera_info = f"{config.camera_type}:{config.camera_index}" + (" (depth)" if config.enable_depth else "")
+
     try:
         while True:
             # Read frame
@@ -647,6 +1168,10 @@ def main():
                 print("Failed to read frame from camera")
                 break
             
+            # Prepare visualization frames
+            vis_frame_color = None
+            vis_frame_depth = None
+
             if not paused:
                 # Run inference
                 detections, bboxes = infer(
@@ -667,20 +1192,24 @@ def main():
                 fps = fps_counter.update()
                 
                 # Draw detections
-                vis_frame = frame.copy()
+                vis_frame_color = frame.copy()
                 if config.enable_depth and depth_frame is not None:
                     depth_scale = camera.depth_scale if hasattr(camera, 'depth_scale') else 0.001
-                    vis_frame = draw_detections(vis_frame, detections, bboxes, class_colors, depth_frame, depth_scale)
+                    vis_frame_color = draw_detections(vis_frame_color, detections, bboxes, class_colors, depth_frame, depth_scale)
                 else:
-                    vis_frame = draw_detections(vis_frame, detections, bboxes, class_colors)
+                    vis_frame_color = draw_detections(vis_frame_color, detections, bboxes, class_colors)
                 
-                # Draw stats overlay
-                camera_info = f"{config.camera_type}:{config.camera_index}"
-                if config.enable_depth:
-                    camera_info += " (depth)"
-                
-                vis_frame = draw_overlay_stats(
-                    vis_frame,
+                # Optional depth overlay blended into color window
+                if config.enable_depth and depth_frame is not None and config.depth_overlay_enabled and config.depth_overlay_alpha > 0.0:
+                    depth_colormap = create_depth_colormap(depth_frame)
+                    if depth_colormap.shape[:2] != vis_frame_color.shape[:2]:
+                        depth_colormap = cv2.resize(depth_colormap, (vis_frame_color.shape[1], vis_frame_color.shape[0]))
+                    alpha = max(0.0, min(1.0, float(config.depth_overlay_alpha)))
+                    vis_frame_color = cv2.addWeighted(vis_frame_color, 1.0 - alpha, depth_colormap, alpha, 0)
+
+                # Draw stats overlay on color window
+                vis_frame_color = draw_overlay_stats(
+                    vis_frame_color,
                     fps,
                     len(detections),
                     class_counts,
@@ -688,35 +1217,52 @@ def main():
                     camera_info,
                     config.conf_threshold,
                     config.resolution,
-                    paused
+                    paused,
+                    depth_overlay_enabled=config.depth_overlay_enabled and config.enable_depth,
+                    depth_overlay_alpha=float(config.depth_overlay_alpha),
                 )
                 
-                # Show depth colormap alongside if enabled
+                # Prepare depth-only window image (if depth enabled)
                 if config.enable_depth and depth_frame is not None:
-                    depth_colormap = create_depth_colormap(depth_frame)
-                    # Resize to match frame height
-                    h, w = vis_frame.shape[:2]
-                    depth_colormap = cv2.resize(depth_colormap, (w // 2, h))
-                    vis_frame = cv2.resize(vis_frame, (w // 2, h))
-                    vis_frame = np.hstack((vis_frame, depth_colormap))
+                    vis_frame_depth = create_depth_colormap(depth_frame)
+                    # Keep depth window size similar to color window height
+                    if vis_frame_depth.shape[0] != vis_frame_color.shape[0]:
+                        scale_w = int(vis_frame_depth.shape[1] * (vis_frame_color.shape[0] / vis_frame_depth.shape[0]))
+                        vis_frame_depth = cv2.resize(vis_frame_depth, (scale_w, vis_frame_color.shape[0]))
                 
                 frame_count += 1
+
+                # Keep last states for pause display
+                last_color_frame = vis_frame_color.copy() if vis_frame_color is not None else frame.copy()
+                last_depth_frame = vis_frame_depth.copy() if vis_frame_depth is not None else None
+                last_fps = fps
+                last_detections = detections
+                last_bboxes = bboxes
+                last_class_counts = class_counts
             else:
-                # Paused - just show the last frame with pause indicator
-                vis_frame = draw_overlay_stats(
-                    vis_frame,
-                    fps,
-                    len(detections),
-                    class_counts,
+                # Paused - show the last frames with pause indicator
+                if last_color_frame is None:
+                    last_color_frame = frame.copy()
+                vis_frame_color = draw_overlay_stats(
+                    last_color_frame.copy(),
+                    last_fps,
+                    len(last_detections),
+                    last_class_counts,
                     Path(config.model_path).name,
                     camera_info,
                     config.conf_threshold,
                     config.resolution,
-                    paused=True
+                    paused=True,
+                    depth_overlay_enabled=config.depth_overlay_enabled and config.enable_depth,
+                    depth_overlay_alpha=float(config.depth_overlay_alpha),
                 )
+                vis_frame_depth = last_depth_frame.copy() if last_depth_frame is not None else None
             
-            # Display frame
-            cv2.imshow(window_name, vis_frame)
+            # Display frames in separate windows
+            if vis_frame_color is not None:
+                cv2.imshow(window_name_color, vis_frame_color)
+            if config.enable_depth and vis_frame_depth is not None:
+                cv2.imshow(window_name_depth, vis_frame_depth)
             
             # Handle keyboard input
             key = cv2.waitKey(1) & 0xFF
@@ -730,7 +1276,9 @@ def main():
                 filename = f"objd_test_{timestamp}.jpg"
                 save_path = REPO_ROOT / "pickafresa_vision" / "images" / filename
                 save_path.parent.mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(str(save_path), vis_frame)
+                # Save color window image
+                to_save = vis_frame_color if vis_frame_color is not None else frame
+                cv2.imwrite(str(save_path), to_save)
                 print(f"Frame saved: {filename}")
             elif key == ord('p'):
                 # Toggle pause
@@ -752,6 +1300,25 @@ def main():
                 config.iou_threshold = 0.45
                 print("Reset to default thresholds")
                 save_current_config(config)
+            elif key == ord('o'):
+                # Toggle depth overlay on color window
+                if config.enable_depth:
+                    config.depth_overlay_enabled = not config.depth_overlay_enabled
+                    state = 'enabled' if config.depth_overlay_enabled else 'disabled'
+                    print(f"Depth overlay {state}")
+                    save_current_config(config)
+            elif key == ord(']'):
+                # Increase overlay alpha
+                if config.enable_depth and config.depth_overlay_enabled:
+                    config.depth_overlay_alpha = min(1.0, float(config.depth_overlay_alpha) + 0.05)
+                    print(f"Overlay alpha: {config.depth_overlay_alpha:.2f}")
+                    save_current_config(config)
+            elif key == ord('['):
+                # Decrease overlay alpha
+                if config.enable_depth and config.depth_overlay_enabled:
+                    config.depth_overlay_alpha = max(0.0, float(config.depth_overlay_alpha) - 0.05)
+                    print(f"Overlay alpha: {config.depth_overlay_alpha:.2f}")
+                    save_current_config(config)
     
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")

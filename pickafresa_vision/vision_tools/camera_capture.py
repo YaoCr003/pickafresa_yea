@@ -27,6 +27,8 @@ Features:
     - Configurable resolution, format, and capture interval
     - Optional metadata logging to JSON
     - Image naming with user-defined prefix, datetime, and frame index
+    
+@aldrick-t, 2025
 '''
 
 import cv2

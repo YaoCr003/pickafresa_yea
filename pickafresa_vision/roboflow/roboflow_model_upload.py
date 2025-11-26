@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from roboflow import Roboflow
 
 try:
-    from config import get_env
+    from pickafresa_vision.configs.config import get_env
 except ImportError:
     # Fallback: read directly from os if config.py not available
     def get_env(name: str, default: str | None = None) -> str | None:

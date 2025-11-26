@@ -13,6 +13,8 @@ API:
 - save_config(cfg: dict) -> None
 - get_namespace(cfg: dict, ns: str) -> dict
 - update_namespace(cfg: dict, ns: str, patch: dict) -> None
+
+@aldrick-t, 2025
 """
 from __future__ import annotations
 

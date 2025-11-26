@@ -2,7 +2,7 @@
 Interactive RealSense D400 Series Depth Calibration Tool
 Script to collect depth measurements, fit a linear model, and visualize results.
 
-Team YEA, 2025
+@aldrick-t, 2025
 '''
 
 import pyrealsense2 as rs
@@ -113,7 +113,7 @@ def mouse_callback(event, x, y, flags, param):
         if dist:
             clicked_point = (x, y)
             current_depth = dist
-            show_text = f"Point ({x},{y}) = {dist:.3f} m → write actual distance"
+            show_text = f"Point ({x},{y}) = {dist:.3f} m -> write actual distance"
         else:
             show_text = "Valid distance could not be obtained."
 
