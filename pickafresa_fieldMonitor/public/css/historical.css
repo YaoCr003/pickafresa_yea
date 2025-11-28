@@ -1,0 +1,231 @@
+body {
+    margin: 0;
+     font-family: "Condiment", cursive;
+    font-weight: 300;
+    font-style: normal;
+    background: #f8bebe;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    position: relative;
+}
+
+.container {
+    background: white;
+    border-radius: 20px;
+    padding: 2rem;
+    width: 90%;
+    max-width: 900px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+    text-align: center;
+    position: relative;
+    z-index: 1;
+}
+
+@keyframes fall {
+    0% { transform: translateY(-10%) rotate(0deg); opacity: 0;}
+    10% { opacity: 1; }
+    100% { transform: translateY(110vh) rotate(360deg); opacity: 0; }
+}
+
+.particle {
+    position: absolute;
+    top: -50px;
+    font-size: 1rem;
+    opacity: 0;
+    animation: fall linear infinite;
+}
+
+h1 {
+    margin-bottom: 2rem;
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.home-btn {
+    display: inline-block;
+    background: #d93057;
+    color: white;
+    padding: 0.7rem 1rem;
+    border-radius: 50%;
+    font-size: 1.2rem;
+    text-decoration: none;
+    margin-bottom: 1rem;
+    transition: background 0.3s ease;
+}
+
+.home-btn:hover {
+    background: #a51e3c;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1.5rem;
+}
+
+.card {
+    background: #f28b82;
+    border-radius: 15px;
+    padding: 2rem 1rem;
+    color: white;
+    font-size: 1.2rem;
+    font-weight: bold;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease;
+}
+
+.card i {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.card:hover {
+    transform: scale(1.05);
+}
+
+.card.temperatura { background: #ff7f50; }
+.card.humedad     { background: #4db6ac; }
+.card.luz         { background: #fbc02d; color: black; }
+.card.fotos       { background: #ba68c8; }
+
+.particle:nth-child(1) { left: 5%; animation-duration: 12s; font-size: 1.2rem; }
+.particle:nth-child(2) { left: 20%; animation-duration: 15s; font-size: 0.9rem; }
+.particle:nth-child(3) { left: 35%; animation-duration: 10s; font-size: 1.1rem; }
+.particle:nth-child(4) { left: 50%; animation-duration: 18s; font-size: 1.3rem; }
+.particle:nth-child(5) { left: 65%; animation-duration: 14s; font-size: 1rem; }
+.particle:nth-child(6) { left: 80%; animation-duration: 16s; font-size: 1.2rem; }
+.particle:nth-child(7) { left: 90%; animation-duration: 13s; font-size: 0.8rem; }
+
+#loader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #43a047, #d93057); /* Verde a rojo fresa */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    z-index: 2000;
+    transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+
+.spinner {
+    width: 60px;
+    height: 60px;
+    border: 6px solid rgba(255, 255, 255, 0.3);
+    border-top: 6px solid #fff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+}
+
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+#loader.hidden {
+    opacity: 0;
+    visibility: hidden;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    body {
+        padding: 0.5rem;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    
+    .container {
+        padding: 1.5rem;
+    }
+
+    h1 {
+        font-size: 1.6rem;
+    }
+
+    .cards {
+        gap: 1rem;
+    }
+
+    .card {
+        font-size: 1rem;
+        padding: 1.5rem 1rem;
+    }
+
+    .card i {
+        font-size: 2rem;
+    }
+}
+
+
+@media (max-width: 768px) {
+    body {
+        padding: 0.5rem;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .container {
+        padding: 1rem;
+        width: 100%;
+        align-items: center;
+    }
+
+    h1 {
+        font-size: 1.4rem;
+        margin-bottom: 1rem;
+    }
+
+    .cards {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .card {
+        font-size: 0.95rem;
+        padding: 1.2rem;
+    }
+
+    .card i {
+        font-size: 1.8rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .home-btn {
+        padding: 0.6rem 0.8rem;
+        font-size: 1rem;
+        margin-bottom: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    h1 {
+        font-size: 1.2rem;
+    }
+
+    .card {
+        font-size: 0.85rem;
+        padding: 1rem;
+    }
+
+    .card i {
+        font-size: 1.5rem;
+    }
+
+    .home-btn {
+        padding: 0.5rem 0.7rem;
+        font-size: 0.9rem;
+    }
+}

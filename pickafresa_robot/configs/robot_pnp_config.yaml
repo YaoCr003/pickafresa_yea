@@ -1,0 +1,734 @@
+# Robot Pick-and-Place System Configuration
+# Configuration for robot pick-and-place operations (CLI, Service, Manager, Remote)
+#
+# @aldrick-t, 2025
+
+# ==============================================================================
+# SERVICE CONFIGURATION (robot_pnp_service)
+# ==============================================================================
+service:
+  host: "127.0.0.1"  # Service bind address
+  port: 5556         # Service port (vision service uses 5555)
+  
+# ==============================================================================
+# SUPABASE CONFIGURATION (robot_pnp_remote)
+# ==============================================================================
+supabase:
+  enabled: false  # Enable cloud logging
+  url: ""         # Supabase project URL
+  key: ""         # Supabase anon/service key
+  table_name: "robot_operations"  # Table for operation logs
+
+# ==============================================================================
+# RUN MODE CONFIGURATION
+# ==============================================================================
+# Controls overall system behavior for confirmations and automation
+run_mode: "autonomous"  # Options: "manual_confirm", "autonomous"
+# - "manual_confirm": Requires user confirmation at each step (safe for testing)
+# - "autonomous": Skips confirmations, prompts only for anomalies (production mode)
+
+# ==============================================================================
+# CONTINUOUS OPERATION MODE
+# ==============================================================================
+# New operating paradigm: System runs in continuous loop
+# Workflow: STARTUP -> FOTO -> STANDBY -> [capture trigger] -> PROCESS -> VERIFY -> STANDBY (repeat)
+# - Foto position becomes the default "idle" state instead of Home
+# - System only returns to Home on shutdown (Ctrl+C or manual quit from standby)
+# - After each berry placement, system verifies successful pick before returning to standby
+continuous_operation:
+  enabled: true  # Enable continuous operation mode (replaces legacy single-pass mode)
+  
+  # Standby behavior configuration
+  standby:
+    # Automatic capture interval (seconds) while at standby/Foto position
+    # System will automatically capture and check for new berries at this interval
+    interval_seconds: 5  # Default: 60s (1 minute)
+    
+    # Manual capture trigger key (for CLI mode)
+    # Press this key at standby to immediately trigger a capture
+    # Note: On macOS, keyboard library requires sudo and causes issues, so we use prompt-based input
+    manual_capture_key: "c"  # Key to press for immediate capture
+    
+    # Verification behavior after pick success
+    verification_behavior:
+      # "option_a": Autonomous - go to standby immediately (no user prompt)
+      # "option_b": Manual confirm - display success message and wait for user input
+      # Defaults based on run_mode:
+      #   - "autonomous" -> "option_a"
+      #   - "manual_confirm" -> "option_b"
+      mode: "auto"  # Options: "auto" (follows run_mode), "option_a", "option_b"
+    
+    # Standby menu options
+    menu:
+      show_statistics: true  # Display session statistics at standby
+      show_timer: true       # Display countdown to next auto-capture
+      allow_manual_capture: true  # Allow manual capture trigger
+      allow_shutdown: true   # Allow graceful shutdown from standby
+  
+  # Pick verification after each berry
+  verification:
+    enabled: true  # After place_final, return to Foto and verify no ripe berries remain
+    max_ripe_berries: 0  # Maximum allowed ripe berries for successful verification (0 = all picked)
+    retry_on_failure: true  # If verification finds more berries, continue picking
+    show_verification_results: true  # Log verification capture results
+  
+  # Multi-berry recapture behavior
+  multi_berry_recapture:
+    enabled: true  # Always recapture at Foto between berries in multi-berry mode
+    description: "In multi-berry mode, system returns to Foto between each berry to recapture and update detection data"
+
+# ==============================================================================
+# STATISTICS TRACKING
+# ==============================================================================
+# Session statistics for monitoring and performance analysis
+statistics:
+  enabled: true  # Enable statistics tracking
+  
+  # What to track
+  track:
+    total_berries_picked: true      # Total successful picks
+    successful_picks: true           # Picks that passed verification
+    failed_picks: true               # Picks that failed
+    total_captures: true             # Total capture requests
+    verification_captures: true     # Captures for verification only
+    standby_cycles: true            # Number of standby wait cycles
+    session_duration: true          # Total runtime
+    berries_per_cycle: true         # Berries picked per capture cycle
+  
+  # Display settings
+  display:
+    show_on_shutdown: true          # Display final statistics on shutdown
+    show_at_standby: true           # Display current stats at standby
+    show_after_verification: true   # Display stats after each verification
+    format: "detailed"              # Options: "summary", "detailed"
+  
+  # Persistence (for future use with service mode)
+  persistence:
+    enabled: false  # Save statistics to file
+    file_path: "pickafresa_robot/logs/session_stats.json"
+    save_interval_seconds: 300  # Auto-save every 5 minutes
+
+# ==============================================================================
+# ROBODK STATION CONFIGURATION
+# ==============================================================================
+robodk:
+  station_file: "pickafresa_robot/rdk/SETUP Fresas.rdk"  # Relative to repo root
+  robot_model: "UR3e"  # Default robot model (can be changed during runtime)
+  simulation_mode: "real_robot"  # Options: "simulate", "real_robot"
+  
+  # Auto-discover targets from RDK station (true = auto, false = use predefined)
+  auto_discover_targets: true
+  
+  # Predefined target names (used if auto_discover fails or as fallback)
+  targets:
+    home: "Home"
+    foto: "Foto"
+    prepick_plane: Prepick_plane
+    # Alignment approach targets for stage 2 capture
+    place_final: "place_final"
+    # prepick, pick, and place are dynamically generated based on PnP results
+  
+  # Fixed targets that should NOT be cleaned up (preserved across runs)
+  # These targets exist in the RDK station and should remain untouched
+  fixed_targets:
+    - "Home"
+    - "Foto"
+    - "Prepick_plane"
+    - "place_final"
+
+# ==============================================================================
+# COORDINATE TRANSFORMS
+# ==============================================================================
+transforms:
+  # Camera TCP offset from tool flange (as defined in RDK)
+  # Format: [x, y, z]mm | Rot[u, v, w]deg
+  # This represents the camera optical center position relative to the robot flange
+  camera_tcp:
+    translation_mm: [-11.080000, -53.400000, 24.757000]  # [x, y, z] in mm
+    rotation_deg: [-10.00000, 0.000000, 0.000000]         # [u, v, w] in degrees (axis-angle)
+  
+  # Gripper TCP offset from tool flange (as defined in RDK)
+  # This represents the actual gripper TCP position relative to the robot flange
+  gripper_tcp:
+    translation_mm: [0.0, 0.0, 57]
+    rotation_deg: [0.0, 0.0, 0.0]
+  
+  # Offset adjustments for pick/prepick points
+  # All offsets are in berry/fruit coordinate frame where:
+  #   Z+ = away from camera (into the fruit)
+  #   Z- = toward camera (away from fruit)
+  # For overhead picking: positive Z goes UP (away from fruit), negative Z goes DOWN (into fruit)
+  pick_offset:
+    # Pre-pick position offset (approach position before actual pick)
+    prepick_offset_mm: [0.0, 100.0, 00.0]  # [x, y, z] offset from fruit center
+                                           # Default: 100mm above fruit (positive Z)
+    prepick_rotation_deg: [0.0, 0.0, -90.0] # [u, v, w] absolute rotation for prepick pose
+    
+    # Pick position offset (actual grasp point)
+    pick_offset_mm: [0.0, 0.0, 00.0]       # [x, y, z] offset from fruit center
+    pick_rotation_deg: [0.0, 0.0, -90.0]    # [u, v, w] absolute rotation for pick pose
+    
+    # Place position offset (where to drop/place fruit)
+    place_offset_mm: [0.0, 0.0, 50.0]     # Offset for place position from pick
+
+# ==============================================================================
+# POST-PICK DETACHMENT MANEUVERS
+# ==============================================================================
+post_pick:
+  # Enable/disable post-pick detachment sequence
+  # After gripping the berry, execute a series of movements to detach it from the plant
+  # These targets are auto-generated relative to the pick position
+  enabled: true
+  
+  # Number of post-pick targets to generate (1-3 typical)
+  num_targets: 3
+  
+  # Rotation mode: "absolute" or "cumulative"
+  # - "absolute": Rotations specified in BASE frame axes, composed with current orientation
+  #               (e.g., [-70, 0, 0] = 70deg rotation around base X-axis, applied to current pose)
+  #               First target rotates from pick orientation, subsequent ones build on that
+  # - "cumulative": Rotations in LOCAL frame axes (current gripper orientation)
+  #               (e.g., [-70, 0, 0] = 70deg twist around gripper's current forward axis)
+  rotation_mode: "cumulative"
+  
+  # Post-pick target configurations (cumulative offsets from pick position)
+  # Each target builds upon the previous one's POSITION (always cumulative)
+  # 
+  # TWO CONTROL MODES PER TARGET:
+  # ==============================
+  # 
+  # MODE 1: CARTESIAN CONTROL (current/default)
+  # --------------------------------------------
+  # Use offset_mm and rotation_deg for Cartesian space control
+  # - Offsets are in berry/fruit coordinate frame (or current frame if rotation_mode="cumulative")
+  # - Rotations use axis-angle representation [u, v, w] in degrees via Rodrigues formula
+  # - In "absolute" mode: Rotation axes are BASE FRAME (UR3e base)
+  #   - rotation_deg: [-70, 0, 0] means 70deg rotation around base X-axis
+  #   - Applied ON TOP of current orientation (builds up from pick)
+  # - In "cumulative" mode: Rotation axes are CURRENT GRIPPER FRAME  
+  #   - rotation_deg: [-70, 0, 0] means 70deg twist around gripper's forward direction
+  #   - Each rotation happens in the new orientation from previous step
+  #
+  # MODE 2: JOINT SPACE CONTROL (NEW - for precise singularity-free maneuvers)
+  # ---------------------------------------------------------------------------
+  # Use joint_deltas_deg to directly specify joint angle changes
+  # - Format: [j0, j1, j2, j3, j4, j5] - deltas in degrees for each joint
+  #   * j0 = base rotation (shoulder pan)
+  #   * j1 = shoulder lift
+  #   * j2 = elbow
+  #   * j3 = wrist 1
+  #   * j4 = wrist 2
+  #   * j5 = wrist 3 / tool flange (j6 in RoboDK notation)
+  # - Cumulative: Each target's deltas are relative to the previous joint configuration
+  # - Example: [0, 5.0, -3.0, 0, 0, 2.0] moves j1 by +5deg, j2 by -3deg, j5 by +2deg
+  # - Useful for: avoiding singularities, precise local maneuvers, small adjustments
+  # - When joint_deltas_deg is present, offset_mm and rotation_deg are IGNORED
+  # - CRITICAL: Use move_type: "joint" for multi-revolution rotations (>360deg)
+  #   * Linear moves use Cartesian interpolation and cannot do multi-revolution!
+  # - Joint Limits: Ensure RoboDK joint limits allow the cumulative angles
+  #   * Default UR limits: +/-360deg per joint
+  #   * For multi-revolution: Update to +/-2160deg (allows 6 full rotations)
+  #
+  # Target selection: If joint_deltas_deg exists, use joint control; else use Cartesian
+  targets:
+    - name: "post_pick_realign"
+      offset_mm: [10.0, 0.0, 00.0]      # 60mm back toward camera (detach motion) - CORRECTED: Z- = toward camera
+      rotation_deg: [10, 0.0, 0.0]      # Rotate 10deg about X-axis (twist for detachment)
+      move_type: "linear"                # Movement type: "linear" or "joint"
+      # joint_deltas_deg: [0, 3.0, -2.0, 0, 0, 1.0]  # OPTIONAL: uncomment for joint control
+    
+    - name: "post_pick_detach"
+      #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
+      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15deg about X-axis (partial reset)
+      move_type: "joint"                 # Movement type: "linear" or "joint" - MUST use "joint" for multi-revolution
+      joint_deltas_deg: [0, 0, -20, 0, 0, 360]  # Joint control: 3.5 full rotations on j6 (tool flange)
+
+    - name: "post_pick_reset"
+      #offset_mm: [0.0, 30, 30]         # Additional offset in (possibly rotated) frame
+      #rotation_deg: [0.0, 0.0, 0.0]    # Rotate -15deg about X-axis (partial reset)
+      move_type: "joint"                 # Movement type: "linear" or "joint" - MUST use "joint" for multi-revolution
+      joint_deltas_deg: [0, 0, 0, 0, 0, -360]  # Joint control: unwind 3 rotations on j6 (tool flange)
+
+
+# ALTERNATIVE POST-PICK CONFIGURATION
+  # targets:
+  #   - name: "post_pick_detach"
+  #     offset_mm: [0.0, 0.0, -30.0]       # 30mm back toward camera (detach motion)
+  #     rotation_deg: [-90, 0.0, 0.0]     # Slight twist to help detachment
+  #     move_type: "linear"                 # Movement type: "linear" or "joint"
+    
+  #   - name: "post_pick_clear"
+  #     offset_mm: [0.0, 80, 50.0]       # Additional 50mm back (total 80mm from pick)
+  #     rotation_deg: [-15.0, 0.0, 0.0]      # Reset twist
+  #     move_type: "linear"                 # Movement type: "linear" or "joint"
+# ALTERNATIVE POST-PICK CONFIGURATION END
+
+# JOINT-SPACE CONTROL EXAMPLES
+# =============================
+# Example 1: Pure joint-space control for singularity avoidance
+  # targets:
+  #   - name: "post_pick_detach"
+  #     joint_deltas_deg: [0, 5.0, -3.0, 0, 2.0, 0]  # Small joint adjustments
+  #     move_type: "joint"                            # Use joint interpolation
+    
+  #   - name: "post_pick_clear"
+  #     joint_deltas_deg: [0, -2.0, 1.5, 0, -1.0, 0]  # Cumulative from detach
+  #     move_type: "joint"
+  
+# Example 2: Hybrid approach - Cartesian then joint control
+  # targets:
+  #   - name: "post_pick_detach"
+  #     offset_mm: [0.0, 0.0, -20.0]      # Cartesian: pull back 20mm
+  #     rotation_deg: [-45, 0.0, 0.0]     # Cartesian: twist 45deg
+  #     move_type: "linear"
+    
+  #   - name: "post_pick_adjust"
+  #     joint_deltas_deg: [0, 3.0, 0, 0, 0, 0]  # Joint: adjust j1 only
+  #     move_type: "joint"
+    
+  #   - name: "post_pick_clear"
+  #     offset_mm: [0.0, 50, 30.0]        # Cartesian: move to clear position
+  #     rotation_deg: [0.0, 0.0, 0.0]
+  #     move_type: "linear"
+
+# Example 3: Fine-tuned joint maneuvers for specific workspace
+  # targets:
+  #   - name: "post_pick_detach"
+  #     joint_deltas_deg: [0, 4.0, -2.5, 0, 1.5, 0]
+  #     move_type: "joint"
+    
+  #   - name: "post_pick_twist"
+  #     joint_deltas_deg: [0, 0, 0, 0, 0, 15.0]  # Twist wrist only (j5)
+  #     move_type: "joint"
+    
+  #   - name: "post_pick_clear"
+  #     joint_deltas_deg: [0, -3.0, 2.0, 0, -1.0, -15.0]  # Return and clear
+  #     move_type: "joint"
+# JOINT-SPACE CONTROL EXAMPLES END
+
+# ==============================================================================
+# MULTI-STAGE CAPTURE CONFIGURATION
+# ==============================================================================
+multi_stage_capture:
+  # Enable/disable multi-stage capture refinement
+  # Stage 1: Initial capture at Foto target (always executed)
+  # Stage 2: Alignment capture - move to center berry in image
+  # Stage 3: Prepick refinement - capture from prepick position
+  
+  stage2_alignment:
+    enabled: false                    # Enable 2nd capture (berry alignment)
+    center_tolerance_px: 10.0         # Pixel tolerance for centering (if within this, skip stage 2)
+    adjust_orientation: true          # Adjust orientation to align camera Z-axis with berry Z-axis
+    
+    # Stage 2 Alignment Strategy:
+    # ============================
+    # Positions camera TCP perpendicular to berry frame for optimal capture
+    #
+    # Berry Frame (from PnP):
+    #   - Origin: at berry surface center
+    #   - Z-axis: points away from camera (into fruit depth)
+    #   - X,Y axes: define berry plane orientation
+    #
+    # Camera Alignment:
+    #   1. Camera X,Y position matches berry X,Y (no lateral offset)
+    #   2. Camera positioned along berry -Z axis (back from berry)
+    #   3. Camera Z-axis parallel to berry Z-axis (both point toward fruit)
+    #   4. Distance controlled by stage2_offset_mm[2] (standoff distance)
+    #
+    # Transform handling:
+    #   - Gripper TCP is the active RoboDK TCP
+    #   - Camera TCP pose calculated, then converted to gripper TCP for motion
+    #   - Transform: T_base_gripper = T_base_camera @ inv(T_flange_camera) @ T_flange_gripper
+    #
+    # Configuration:
+    #   stage2_offset_mm[2]: Distance from camera to berry along berry Z-axis (mm)
+    #   - Positive value = camera positioned back from berry
+    #   - Example: [0, 0, 250] = camera 250mm back from berry surface
+    #   - Only Z component used; X,Y forced to zero (no lateral offset)
+    stage2_offset_mm: [0.0, 0.0, 200]  # [x, y, z] - only z used for standoff distance
+    stage2_rotation_deg: [0.0, 0.0, 0.0]  # [u, v, w] additional rotation offset (applied to camera frame)
+  
+  stage3_prepick:
+    enabled: false                    # Enable 3rd capture (prepick refinement)
+    min_depth_mm: 220.0               # Minimum depth for using depth data (RealSense limitation)
+    refine_axes: ["x", "z"]           # Which axes to refine in base frame (x, z from below)
+    use_geometric_only: true          # Use PnP without depth constraint for refinement
+    
+    # Offsets for stage3 position (relative to berry position in berry frame)
+    # Applied BEFORE the prepick_offset, allowing independent positioning
+    # These do not affect the prepick_offset configuration
+    stage3_offset_mm: [0.0, 0.0, 0.0]  # [x, y, z] offset from berry for stage3 capture
+    stage3_rotation_deg: [0.0, 0.0, 0.0]  # [u, v, w] rotational offset for stage3
+
+# ==============================================================================
+# COLLISION AVOIDANCE
+# ==============================================================================
+collision_avoidance:
+  enabled: true                       # Enable collision checking (recommended)
+  check_before_move: true             # Check collision before executing move
+  fallback_strategies:                # Strategies to try when collision detected (in order)
+    - "try_linear"                    # Try MoveL instead of MoveJ
+    - "try_alternative_ik"            # Try different IK solution
+    - "use_path_sampling"             # Use intelligent path sampling to find collision-free paths
+    - "add_waypoints"                 # Add intermediate waypoints
+    - "abort"                         # Abort and notify user
+  cache_checks: true                  # Cache collision checks for performance
+  recheck_interval_sec: 1.0           # Recheck cached results after this interval
+  
+  # Per-strategy attempt limits
+  # Controls maximum number of attempts for each collision avoidance strategy
+  max_linear_attempts: 20              # Max attempts to try linear move as alternative
+  max_ik_attempts: 48                # Max IK configurations to try (expanded from 8)
+  max_waypoint_attempts: 10           # Max waypoint generation attempts
+  
+  # Path sampling settings
+  # Samples intermediate configurations to verify collision-free paths
+  motion_planner:
+    enabled: false                     # Enable path sampling strategy
+    max_planning_time_ms: 5000        # Controls number of samples (time/10 = samples, max 50)
+    max_iterations: 1000              # Reserved for future enhancements
+    use_for_joint_moves: true         # Apply to MoveJ operations
+    use_for_linear_moves: true        # Apply to MoveL operations
+
+# ==============================================================================
+# MULTI-BERRY PICKING
+# ==============================================================================
+multi_berry:
+  # NOTE: mode is auto-linked to run_mode
+  # - run_mode "manual_confirm" -> mode "semi_auto"
+  # - run_mode "autonomous" -> mode "full_auto"
+  # You can override this by explicitly setting mode in code, but default behavior links them
+  mode: "full_auto"                   # Options: "semi_auto" (with confirmations), "full_auto" (no confirmations)
+  max_berries_per_run: 100            # Maximum number of berries to pick in one run (across all capture cycles)
+  sort_by: "confidence"               # How to sort berries: "confidence", "distance", "position"
+  confirm_between_picks: true         # Ask for confirmation between each berry (semi_auto mode)
+  
+  # DEPRECATED: return_home_between_picks is now obsolete in continuous_operation mode
+  # System always stays at Foto between picks to avoid collisions and enable recapture
+  # This setting is kept for backward compatibility but has no effect when continuous_operation.enabled = true
+  return_home_between_picks: false    # DEPRECATED - Use continuous_operation.multi_berry_recapture instead
+  
+  abort_on_failure: false             # Abort entire run if one berry fails
+  retry_on_failure: true              # Retry failed berry picks
+  max_retries: 5                      # Maximum retry attempts per berry
+
+# ==============================================================================
+# MQTT GRIPPER CONTROL
+# ==============================================================================
+mqtt:
+  enabled: true  # Enable/disable MQTT (can override at runtime)
+  broker_ip: "192.168.1.114"
+  broker_port: 1883
+  keepalive: 60
+  
+  # MQTT Topics
+  topics:
+    command: "actuador/on_off"       # Topic to send gripper commands
+    state_feedback: "actuador/state"  # Topic to receive gripper state
+  
+  # Gripper states
+  states:
+    inflated: "inflado"      # Gripper closed/gripping state
+    deflated: "desinflado"   # Gripper open/released state
+  
+  # State confirmation settings
+  confirmation:
+    enabled: true              # Wait for state confirmation
+    timeout_seconds: 120.0     # Timeout for state confirmation (2 minutes)
+    allow_override: true       # Allow user to skip waiting with keypress
+    override_key: "c"          # Key to press to continue without confirmation
+    confirm_on_timeout: true   # Require user confirmation when timeout occurs (all modes)
+
+# ==============================================================================
+# MOVEMENT & SPEED CONFIGURATION
+# ==============================================================================
+movement:
+  # Speed profiles (percentage of max speed)
+  speed_profiles:
+    turtle:
+      linear_speed: 20   # mm/s or % of max
+      joint_speed: 10    # deg/s or % of max
+      acceleration: 20   # % of max
+    
+    slow:
+      linear_speed: 50
+      joint_speed: 30
+      acceleration: 40
+    
+    normal:
+      linear_speed: 100
+      joint_speed: 60
+      acceleration: 60
+    
+    custom:
+      linear_speed: 80    # User can override these
+      joint_speed: 50
+      acceleration: 50
+  
+  # Default profile to use
+  default_profile: "custom"  # Options: "turtle", "slow", "normal", "custom"
+  
+  # Movement type preferences
+  move_type:
+    approach: "linear"      # Options: "joint" (MoveJ), "linear" (MoveL)
+    pick: "linear"
+    place: "linear"
+    retract: "linear"
+
+# ==============================================================================
+# VISION SERVICE CONFIGURATION
+# ==============================================================================
+vision_service:
+  enabled: true                       # Enable vision service IPC communication
+  host: "127.0.0.1"                   # Vision service host (usually localhost)
+  port: 5557                          # Vision service IPC port
+  timeout: 30.0                       # Request timeout in seconds
+  
+  # Connection resilience settings
+  reconnection:
+    enabled: true                     # Enable automatic reconnection on connection failures
+    max_retries: 3                    # Maximum number of reconnection attempts per request
+    retry_delay: 2.0                  # Delay between retry attempts (seconds)
+    detect_errors:                    # Error patterns that trigger reconnection
+      - "broken pipe"
+      - "connection"
+      - "closed"
+      - "reset"
+      - "errno 32"                    # SIGPIPE (broken pipe)
+      - "errno 104"                   # ECONNRESET (connection reset)
+  
+  # Multi-frame averaging settings (when requesting captures)
+  multi_frame_enabled: true           # Request multi-frame averaged detections
+  num_frames: 10                      # Number of frames to average
+  
+  # Fallback behavior
+  fallback_to_direct: true            # If service unavailable, use direct capture (if available)
+  require_in_auto_mode: true          # Require service in auto/vision mode
+  
+  # Offline/Debug Mode (NEW)
+  # If vision service is unavailable during initialization, the controller will:
+  # 1. Mark itself as in "offline mode"
+  # 2. Prompt the user to select a JSON data file from pickafresa_vision/captures/
+  # 3. Load detections from that JSON file instead of requesting live captures
+  # This allows testing pick sequences with pre-recorded detection data
+
+# ==============================================================================
+# PNP DATA SOURCE CONFIGURATION
+# ==============================================================================
+pnp_data:
+  # Source mode: "vision" (vision service), "api" (live direct), "json" (offline file)
+  source_mode: "vision"  # Options: "vision", "api", "json"
+  
+  # API mode settings (when source_mode = "api")
+  api:
+    vision_config_path: "pickafresa_vision/configs/pnp_calc_config.yaml"
+    objd_config_path: "pickafresa_vision/configs/objd_config.yaml"
+    realsense_config_path: "pickafresa_vision/configs/realsense_capture_config.yaml"
+  
+  # JSON mode settings (when source_mode = "json")
+  json:
+    # Search directory for JSON files (automatically uses latest file)
+    search_directory: "pickafresa_vision/captures"
+    
+    # Filter settings
+    min_confidence: 0.5       # Minimum confidence to consider detection
+    prefer_class: "ripe"      # Preferred class if multiple detections
+    
+    # Multi-detection handling
+    auto_select_best: false   # If false, prompt user to select
+    selection_criteria: "confidence"  # Options: "confidence", "closest", "user_select"
+
+# ==============================================================================
+# MOVEMENT SEQUENCE CONFIGURATION
+# ==============================================================================
+# SEQUENCE CONFIGURATION
+# ==============================================================================
+# NOTE: With continuous_operation.enabled = true, this sequence is DEPRECATED
+# The system now runs in a continuous loop managed by state machine
+# Legacy sequence mode is kept for backward compatibility only
+sequence:
+  # Execution mode: "yaml" (use predefined), "interactive" (step-by-step prompts), "legacy" (hard-coded)
+  execution_mode: "yaml"  # Options: "yaml", "interactive", "legacy"
+  
+  # Main sequence (executed once per run in legacy mode)
+  # DEPRECATED in continuous_operation mode - use state machine instead
+  # Note: Individual berry movements (prepick, pick, etc.) are handled inside process_fruits step
+  # Set confirm: false to use run_mode default, or true/false to override
+  steps:
+    - name: "move_home"
+      type: "move"
+      target: "Home"
+      move_type: "joint"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to home position"
+    
+    - name: "move_foto"
+      type: "move"
+      target: "Foto"
+      move_type: "joint"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to camera/foto position"
+    
+    - name: "capture_pnp"
+      type: "capture"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Capture and process PnP data (or load from JSON)"
+    
+    - name: "process_fruits"
+      type: "process_fruits"
+      confirm: false  # Keep false - no confirmation needed to start processing
+      description: "Process all detected fruits (executes per-berry sequence for each)"
+    
+    # REMOVED: move_home_final - In continuous_operation mode, system stays at Foto
+    # System only returns to Home on explicit shutdown (Ctrl+C or quit from standby)
+  
+  # Per-berry sequence (executed for each fruit during process_fruits step)
+  # These steps are executed by _process_single_fruit() for each detected berry
+  # Target names with {berry_letter} will be dynamically replaced (e.g., prepick_A, pick_B)
+  per_berry_steps:
+    - name: "move_prepick_plane"
+      type: "move"
+      target: "Prepick_plane"
+      move_type: "joint"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to prepick plane (safe approach height)"
+    
+    - name: "move_prepick"
+      type: "move"
+      target: "prepick_{berry_letter}"
+      move_type: "linear"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to berry-specific prepick position"
+    
+    - name: "move_pick"
+      type: "move"
+      target: "pick_{berry_letter}"
+      move_type: "linear"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to pick position (grasp point)"
+    
+    - name: "gripper_close"
+      type: "gripper"
+      action: "close"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Close gripper to grasp fruit"
+    
+    # NOTE: Post-pick detachment sequence is automatically executed here (after gripper_close, before move_place)
+    # It is controlled by the post_pick configuration section above (enabled: true/false)
+    # The post-pick targets are dynamically generated based on post_pick.targets configuration
+    
+    - name: "move_home_before_place"
+      type: "move"
+      target: "Home"
+      move_type: "joint"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to Home position (safe clearance before place)"
+    
+    - name: "move_place"
+      type: "move"
+      target: "Home"
+      move_type: "linear"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to place/home position"
+
+    - name: "place_final"
+      type: "move"
+      target: "place_final"
+      move_type: "linear"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Move to final place position"
+    
+    - name: "gripper_open"
+      type: "gripper"
+      action: "open"
+      # confirm: true  # Comment out to use run_mode default
+      description: "Open gripper to release fruit"
+
+# ==============================================================================
+# SAFETY & CONFIRMATION SETTINGS
+# ==============================================================================
+safety:
+  # Granular confirmation controls (overridden by run_mode if not explicitly set)
+  # These provide fine-grained control over what requires confirmation
+  # - When run_mode="manual_confirm": defaults to true for all
+  # - When run_mode="autonomous": defaults to false for all (only prompts on anomalies)
+  # 
+  # IMPORTANT: Leave these as false when run_mode="autonomous" or remove them to use defaults
+  # Set to true only if you want to FORCE confirmations even in autonomous mode
+  confirmations:
+    movements: false              # Ask before each robot movement
+    gripper_actions: false        # Ask before gripper open/close
+    captures: false               # Ask before vision captures
+    between_berries: false        # Ask for confirmation between each berry pick
+    sequence_start: false         # Ask before starting full sequence
+  
+  # Emergency stop
+  emergency_stop_key: "esc"          # Key to abort program
+  
+  # Collision detection (RoboDK feature - enabled for ALL movements)
+  check_collisions: true
+  
+  # Workspace limits (optional safety bounds in robot base frame, mm)
+  workspace_limits:
+    enabled: false
+    x_min: -500.0
+    x_max: 500.0
+    y_min: -500.0
+    y_max: 500.0
+    z_min: 0.0
+    z_max: 800.0
+
+# ==============================================================================
+# LOGGING CONFIGURATION
+# ==============================================================================
+logging:
+  # Log file settings
+  log_directory: "pickafresa_robot/logs"
+  log_filename_prefix: "robot_pnp"
+  log_level: "DEBUG"  # File logging level: "DEBUG", "INFO", "WARN", "ERROR"
+  
+  # Console output
+  console_output: true
+  console_level: "INFO"  # Console logging level (typically less verbose than file)
+  
+  # File management
+  use_timestamp_in_filename: false    # If false, use fixed name (e.g., robot_pnp.log)
+  overwrite_on_start: true            # If true, overwrite log on each run; if false, append
+  
+  # ROS2-style formatting
+  format: "[{timestamp}] [{level}] [{node}]: {message}"
+  timestamp_format: "%Y-%m-%d %H:%M:%S.%f"  # Microsecond precision
+  node_name: "robot_pnp_cli"
+
+# ==============================================================================
+# VISUALIZATION SETTINGS
+# ==============================================================================
+visualization:
+  # Create reference frames in RoboDK for debugging
+  create_fruit_frames: true
+  create_prepick_frames: true
+  
+  # Highlight targets before movement
+  highlight_target: true
+  highlight_duration_ms: 500
+  
+  # Frame visualization settings
+  frame_size_mm: 50.0      # Size of coordinate frame axes
+  fruit_frame_color: [255, 0, 0]     # RGB color for fruit frames (red)
+  prepick_frame_color: [0, 255, 0]   # RGB color for prepick frames (green)
+
+# ==============================================================================
+# ADVANCED SETTINGS
+# ==============================================================================
+advanced:
+  # Retry settings
+  max_retries: 3
+  retry_on_collision: true
+  
+  # Validation
+  validate_transforms: true
+  validate_reachability: true  # Check if target is reachable before moving
+  
+  # Debug mode
+  debug_mode: false
+  verbose_logging: true

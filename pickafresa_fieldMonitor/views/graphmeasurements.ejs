@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Últimas 24h</title>
+    <link rel="icon" type="image/png" href="/img/reloj.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/css/graphmeasurements.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+
+    <div class="background"></div>
+    <header>
+        <h1 class="title">🍓 Data from the last 24 hours 🌱</h1>
+    </header>
+    
+
+    <main>
+        <div class="chart-container" style="height: 500px;">
+            <canvas id="lineChart"></canvas>
+        </div>
+
+        <button class="back-btn" onclick="window.location.href='/'"> Home </button>
+    
+    </main>
+    
+
+    <script>
+        const labels = <%- JSON.stringify(labels) %>;
+        const temperature = <%- JSON.stringify(temperature) %>;
+        const ambientHumidity = <%- JSON.stringify(ambientHumidity) %>;
+        const substrateMoisture = <%- JSON.stringify(substrateMoisture) %>;
+        const percentageLight = <%- JSON.stringify(percentageLight) %>;
+
+    </script>
+    <script src="/js/graphmeasurements.js"></script>
+
+</body>
+</html>

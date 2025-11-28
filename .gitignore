@@ -4,3 +4,58 @@ pickafresa_cropSensor/.DS_Store
 
 # Visual Studio Code specific files
 pickafresa_cropSensor.code-workspace
+.vscode/
+pickafresa_fieldMonitor/
+.history/
+*.code-workspace
+
+# Python specific files
+__pycache__/
+
+# MacOS-Realsense specific files
+realsense_venv_sudo
+
+/pickafresa_vision/datasets/*/
+
+# Secrets and local environment files
+.env
+*.env
+pickafresa_vision/.env
+pickafresa_vision/**/.env
+pickafresa_yea.venv
+pickafresa_yea.venv
+
+# Image files
+pickafresa_vision/images/*
+!pickafresa_vision/images/**/*.*
+captures/
+!pickafresa_vision/images/**.txt
+
+# Large data files
+pickafresa_vision/datasets/*.zip
+pickafresa_vision/datasets/*.tar.gz
+
+# Log files
+*.log
+logs/
+
+# User specific configuration
+pickafresa_vision/.user_config.json
+pickafresa_vision/**/.user_config.json
+
+# Node modules
+/node_modules/ 
+pickafresa_fieldMonitor/node_modules/
+pickafresa_fieldMonitor/node_modules 2/
+
+# Log files
+*.log
+logs/
+
+# User specific configuration
+pickafresa_vision/.user_config.json
+pickafresa_vision/**/.user_config.json
+
+# Node modules
+/node_modules/ 
+pickafresa_fieldMonitor/node_modules/

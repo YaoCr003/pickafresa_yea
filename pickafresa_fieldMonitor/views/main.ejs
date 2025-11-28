@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring System</title>
+    <link rel="icon" type="image/png" href="/img/fresa.png">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+
+    <div class="alert-container" id="alertContainer"></div>
+
+    <header>
+        <img src="/img/0-removebg-preview.png" alt="Logo">
+        <h1> Monitoring System 🍓 </h1>
+         <div class="buttons">
+            <button onclick="window.location.href='/alerts'"> Alerts </button>
+            <button onclick="window.location.href='/historical'"> Historical </button>
+            <button onclick="window.location.href='/graphmeasurements'"> 24h </button>
+        </div>
+    </header>
+
+    <main>
+        <!-- Measurement container -->
+         <div class="measures">
+
+            <!-- Date container -->
+            <% if (lastMeasureDate) { %>
+                <div class="card time-card">
+                    <i class="fa-solid fa-clock"></i>
+                    <p>Last update: <%= lastMeasureDate %></p>
+                </div>
+            <% } %>
+
+            <!-- Temperature container -->
+            <div class="card <%= measure[0]?.temperature > 26 ? 'high-temp' : measure[0]?.temperature < 15 ? 'low-temp' : '' %>">
+                <i class="fa-solid fa-temperature-high"></i>
+                <p> Temperature: <%= measure[0]?.temperature %> °C </p>
+            </div>
+
+            <!-- Ambient humidity container -->
+            <div class="card <%= measure[0]?.ambient_humidity > 80 ? 'high-ambient' : measure[0]?.ambient_humidity < 60 ? 'low-ambient' : '' %>">
+                <i class="fa-solid fa-droplet"></i>
+                <p> Ambient humidity: <%= measure[0]?.ambient_humidity %> % </p>
+            </div>
+
+            <!-- Substrate moisture container -->
+            <div class="card <%= measure[0]?.substrate_moisture > 70 ? 'high-substrate' : measure[0]?.substrate_moisture < 60 ? 'low-substrate' : '' %>">
+                <i class="fa-solid fa-seedling"></i>
+                <p> Substrate moisture: <%= measure[0]?.substrate_moisture %> % </p>
+            </div>
+
+            <!-- Light container -->
+            <div class="card <%= measure[0]?.percentage_light < 70 ? 'low-light' : '' %>">
+                <i class="fa-solid fa-sun"></i>
+                <p>Light: <%= measure[0]?.percentage_light %>%</p>
+            </div>
+
+         </div>
+
+
+        <!-- Image Container -->
+        <div class="photo">
+            <div class="photo-container">
+                <% if (photos.length > 0  && photos[0].image) { %>
+                    <img src="data:<%= photos[0].mime %>;base64,<%= photos[0].image %>" alt="Monitoring photo">
+                    <% if (lastPhotoDate) { %>
+                        <p class="last-update">Last photo uploaded: <%= lastPhotoDate %></p>
+                    <% } %>
+                <% } else { %>
+                    <p> No photo available </p>
+                <% } %>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="/js/main.js"></script>
+    <script>
+        const alerts = [];
+
+        <% if (measure[0]?.temperature > 26) { %>
+            alerts.push("⚠️ Very high temperature!");
+        <% } else if (measure[0]?.temperature < 15) { %>
+            alerts.push("❄️ Low temperature!");
+        <% } %>
+
+        <% if (measure[0]?.ambient_humidity > 75) { %>
+            alerts.push("💧 High humidity, risk of fungi!");
+        <% } else if (measure[0]?.ambient_humidity < 55) { %>
+            alerts.push("💧 Low ambient humidity, probability of water stress!");
+        <% } %>
+
+        <% if (measure[0]?.substrate_moisture > 80) { %>
+            alerts.push("🌱 High substrate humidity, risk of rot!");
+        <% } else if (measure[0]?.substrate_moisture < 55) { %>
+            alerts.push("🌱 Low substrate moisture, risk of water stress!");
+        <% } %>
+
+        <% if (measure[0]?.percentage_light < 60) { %>
+            alerts.push("☀️Little light available!");
+        <% } %>
+
+        const newAlertsCount = <%- newAlertsCount %>;
+
+        if (newAlertsCount > 0) {
+            alerts.push(`🔔 There are ${newAlertsCount} new alerts`);
+        }
+
+        const container = document.getElementById("alertContainer");
+
+        alerts.forEach(msg => {
+            const div = document.createElement("div");
+            div.className = "alert";
+            div.textContent = msg;
+            container.appendChild(div);
+
+            // Remover alerta después de 4s
+            setTimeout(() => div.remove(), 3000);
+        });
+    </script>
+
+</body>
+</html>
