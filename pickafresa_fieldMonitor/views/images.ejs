@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Images</title>
+    <link rel="icon" type="image/png" href="/img/camara.png">
+    <link rel="stylesheet" href="/css/images.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+    
+     <a href="/historical" class="back-btn">⬅ Back</a>
+
+    <div class="container">
+
+        <h1> Images </h1>
+
+        <form method="GET" action="/historical/images" class="date-form">
+            <label for="start">Start:</label>
+            <input type="date" id="start" name="start" value="<%= start || '' %>">
+
+            <label for="end">End:</label>
+            <input type="date" id="end" name="end" value="<%= end || '' %>">
+
+            <button type="submit">Filter</button>
+        </form>
+
+        <% if (message) { %>
+            <p class="message"><%= message %></p>
+        <% } %>
+
+        <div class="gallery">
+            <% photos.forEach(photo => { %>
+                <div class="card">
+                    <img src="data:<%= photo.mime %>;base64,<%= photo.image %>" alt="Imagen">
+                    <div class="card-info">
+                        <p><%= photo.date %></p>
+                    </div>
+                </div>
+            <% }) %>
+        </div>
+
+    </div>
+    
+    <script>
+        window.addEventListener("load", () => {
+            const loader = document.getElementById("loader");
+            loader.classList.add("hidden");
+        });
+
+        
+        document.querySelectorAll("a, button[type=submit]").forEach(el => {
+            el.addEventListener("click", () => {
+                const loader = document.getElementById("loader");
+                loader.classList.remove("hidden");
+            });
+        });
+     </script>
+</body>
+</html>

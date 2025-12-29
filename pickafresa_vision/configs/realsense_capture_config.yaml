@@ -1,0 +1,102 @@
+# RealSense D435 Capture Configuration
+# Configuration for RealSense D400 series camera initialization and frame capture
+
+# @aldrick-t, 2025
+
+# Camera selection
+camera:
+  auto_detect: true           # Auto-detect first available RealSense device
+  preferred_serial: null      # Specific device serial number (null = auto)
+  device_timeout_ms: 20000     # Timeout for device enumeration (milliseconds)
+
+# Stream configuration
+# Default resolutions and frame rates for color and depth streams
+streams:
+  color:
+    width: 640
+    height: 480
+    fps: 15
+    format: "RGB8"            # Options: RGB8, BGR8, RGBA8, BGRA8, Y16
+  
+  depth:
+    width: 640
+    height: 480
+    fps: 15
+    format: "Z16"             # Depth format (Z16 is standard 16-bit depth)
+
+# Alignment configuration
+alignment:
+  align_to_color: true        # Align depth frames to color frame
+  align_method: "color"       # Options: "color", "depth"
+
+# Profile verification and caching
+profile_verification:
+  use_cached_profiles: false   # Use previously verified working profiles
+  verify_on_startup: false    # Re-verify profiles even if cached (slower startup)
+  cache_expiry_days: 30       # Days before cached profiles are re-verified
+  max_startup_retries: 3      # Maximum initialization retry attempts
+  retry_delay_seconds: 1.0    # Delay between retry attempts
+
+# Device initialization
+initialization:
+  hardware_reset_on_start: true  # Perform hardware reset before initialization
+  cleanup_existing_contexts: true # Clean up any existing RS contexts (macOS fix)
+  enable_advanced_mode: true     # Enable RealSense advanced mode features
+  stabilization_frames: 5         # Number of frames to discard for sensor stabilization
+
+# Frame capture settings
+capture:
+  timeout_ms: 10000            # Timeout for wait_for_frames (milliseconds)
+  max_frame_retries: 20       # Maximum retries for frame acquisition
+  retry_backoff_ms: 200       # Backoff time between frame retries (milliseconds)
+
+# Intrinsics handling
+intrinsics:
+  source: "realsense"              # Options: "auto", "realsense", "yaml"
+                              # auto: Try YAML first, fallback to RealSense
+                              # realsense: Always use RealSense SDK intrinsics
+                              # yaml: Always use YAML calibration file
+  validate_yaml_match: false   # Validate YAML intrinsics match RealSense (when both available)
+  match_tolerance_pixels: 5.0 # Tolerance for intrinsic parameter matching (pixels)
+  calibration_directory: "camera_calibration"  # Relative to pickafresa_vision/
+  calibration_file_pattern: "calib*.yaml"      # Pattern to match calibration files
+
+# Post-processing filters (optional depth enhancement)
+# Disabled by default for raw depth accuracy
+post_processing:
+  enable_decimation: false    # Reduce depth resolution for performance
+  decimation_factor: 2        # Decimation magnitude (2 = half resolution)
+  
+  enable_spatial: false       # Spatial edge-preserving filter
+  spatial_magnitude: 2        # Spatial filter iterations
+  spatial_alpha: 0.5          # Spatial filter alpha (0-1)
+  spatial_delta: 20           # Spatial filter delta (depth difference threshold)
+  
+  enable_temporal: false      # Temporal smoothing filter
+  temporal_alpha: 0.4         # Temporal filter alpha (0-1)
+  temporal_delta: 20          # Temporal filter delta
+  temporal_persistence: 3     # Temporal persistence mode (0-8)
+  
+  enable_hole_filling: false  # Fill depth holes
+  hole_filling_mode: 1        # Hole filling mode (0=off, 1=farest_from_around, 2=nearest_from_around)
+
+# Error handling
+error_handling:
+  auto_recover: true          # Attempt automatic recovery from errors
+  max_consecutive_failures: 5 # Maximum consecutive failures before giving up
+  reset_on_failure: true      # Perform hardware reset on repeated failures
+  log_errors: true            # Log errors to file
+
+# macOS-specific workarounds
+macos_workarounds:
+  enabled: true               # Enable macOS-specific fixes
+  kill_vdc_assistant: true   # Kill VDCAssistant process (requires sudo)
+  force_usb_reset: true      # Force USB device reset (requires sudo)
+  extra_init_delay_ms: 5000    # Extra delay after initialization
+
+# Logging configuration
+logging:
+  enabled: true
+  log_file: "realsense_capture.log"  # Relative to pickafresa_vision/logs/
+  log_level: "INFO"           # Options: DEBUG, INFO, WARNING, ERROR
+  log_format: "json"          # Options: "json", "text"

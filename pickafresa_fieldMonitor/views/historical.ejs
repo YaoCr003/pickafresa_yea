@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datos históricos</title>
+    <link rel="icon" type="image/png" href="/img/menu.png">
+    <link rel="stylesheet" href="/css/historical.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p>Cargando...</p>
+    </div>
+
+    <span class="particle">🍓</span>
+    <span class="particle">🍃</span>
+    <span class="particle">🍓</span>
+    <span class="particle">🍃</span>
+    <span class="particle">🍓</span>
+    <span class="particle">🍃</span>
+    <span class="particle">🍓</span>
+
+    <div class="container">
+        <!-- Home button -->
+        <a href="/" class="home-btn"><i class="fa-solid fa-arrow-left"></i></a>
+
+        <h1>Historical data</h1>
+
+        <div class="cards">
+            <!-- Temperature -->
+            <a href="/historical/temperature" class="card temperatura">
+                <i class="fa-solid fa-temperature-high"></i>
+                <span>Temperature</span>
+            </a>
+
+            <!-- Humidity -->
+            <a href="/historical/humidity" class="card humedad">
+                <i class="fa-solid fa-droplet"></i>
+                <span>Humidity</span>
+            </a>
+
+            <!-- Light -->
+            <a href="/historical/light" class="card luz">
+                <i class="fa-solid fa-sun"></i>
+                <span>Light</span>
+            </a>
+
+            <!-- Images -->
+            <a href="/historical/images" class="card fotos">
+                <i class="fa-solid fa-camera"></i>
+                <span>Images</span>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        window.addEventListener("load", () => {
+            const loader = document.getElementById("loader");
+            loader.classList.add("hidden");
+        });
+
+        document.querySelectorAll("a, button").forEach(el => {
+            el.addEventListener("click", () => {
+                const loader = document.getElementById("loader");
+                loader.classList.remove("hidden");
+            });
+        });
+    </script>
+</body>
+</html>
